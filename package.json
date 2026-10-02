@@ -1,0 +1,1 @@
+{"name":"hoist","private":true,"version":"0.1.0","scripts":{"start":"bun src/main.ts serve","test":"bun test","check":"bun build src/main.ts --target=bun --outfile=/tmp/hoist-check.js"},"engines":{"bun":">=1.4.2"}}

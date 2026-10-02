@@ -1,0 +1,34 @@
+{
+  "bun": "1.4.2",
+  "platform": "linux",
+  "architecture": "x64",
+  "scope": "Only Bun server PID VmRSS from /proc; test client, setup password hashing, OS page cache and deployment children excluded. No deployment child ran.",
+  "sampleIntervalMs": {
+    "idle": 20,
+    "upload": 10
+  },
+  "coldIdle": {
+    "minKiB": 28044,
+    "maxKiB": 28504,
+    "lastKiB": 28504,
+    "samples": 99
+  },
+  "loginPeakKiB": 29800,
+  "authenticatedIdle": {
+    "minKiB": 30308,
+    "maxKiB": 30472,
+    "lastKiB": 30472,
+    "samples": 99
+  },
+  "upload": {
+    "bytes": 67108864,
+    "durationMs": 1135,
+    "peakKiB": 46624
+  },
+  "postUploadIdle": {
+    "minKiB": 38776,
+    "maxKiB": 38776,
+    "lastKiB": 38776,
+    "samples": 100
+  }
+}

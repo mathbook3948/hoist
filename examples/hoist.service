@@ -1,0 +1,29 @@
+# EXAMPLE ONLY. Not installed/enabled. Adjust paths/user and review deployment needs.
+[Unit]
+Description=Lightweight Bun Hoist
+After=network.target
+
+[Service]
+Type=simple
+User=hoist
+Group=hoist
+WorkingDirectory=/opt/hoist
+# Use the installed absolute Bun executable path on your server.
+ExecStart=/opt/bun/bin/bun /opt/hoist/src/main.ts serve --data-dir /var/lib/hoist
+StateDirectory=hoist
+StateDirectoryMode=0700
+UMask=0077
+Restart=on-failure
+RestartSec=3
+KillMode=control-group
+TimeoutStopSec=10
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/hoist
+# Add only the specific deployment target directories the trusted script needs.
+# ReadWritePaths=/srv/my-app
+
+[Install]
+WantedBy=multi-user.target
