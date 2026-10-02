@@ -48,11 +48,12 @@ export function startServer(store: Store, settings: Settings = readSettings()) {
           fail(403, "Host rejected");
         const path = url.pathname;
         const method = req.method;
+        const appRoute = path.match(
+          /^\/([a-zA-Z0-9_-]{1,64})(?:\/([a-zA-Z0-9_-]{1,64}))?$/,
+        );
         const appPage =
           path === "/" ||
-          (/^\/[a-zA-Z0-9_-]{1,64}$/.test(path) &&
-            path !== "/api" &&
-            path !== "/assets");
+          (appRoute && appRoute[1] !== "api" && appRoute[1] !== "assets");
         const staticFile = staticFiles.get(appPage ? "/" : path);
         if (method === "GET" && appPage && !staticFile)
           fail(

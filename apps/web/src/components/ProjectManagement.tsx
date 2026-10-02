@@ -6,7 +6,7 @@ import {
 } from "../../../server/src/models";
 import type { Console } from "../console";
 import { Button } from "./ui/button";
-import { Plus, Settings, Trash2 } from "lucide-react";
+import { Plus, Settings, Trash2, X } from "lucide-react";
 import { Input } from "./ui/input";
 import { Textarea } from "./ui/textarea";
 import { ScrollArea, ScrollBar } from "./ui/scroll-area";
@@ -16,6 +16,7 @@ import { Spinner } from "./ui/spinner";
 import { Alert, AlertDescription } from "./ui/alert";
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogHeader,
   DialogTitle,
@@ -215,7 +216,7 @@ export function ProjectManagement({ app }: { app: Console }) {
             className="min-w-0 [&>[data-slot=scroll-area-viewport]]:max-h-[90svh] [&>[data-slot=scroll-area-viewport]>div]:block!"
           >
             <div className="min-w-0 space-y-4 p-6">
-              <DialogHeader>
+              <DialogHeader className="pr-10">
                 <DialogTitle>
                   {editor?.editingId ? "프로젝트 설정" : "프로젝트 등록"}
                 </DialogTitle>
@@ -324,6 +325,17 @@ export function ProjectManagement({ app }: { app: Console }) {
               )}
             </div>
           </ScrollArea>
+          <DialogClose asChild>
+            <Button
+              variant="secondary"
+              size="icon"
+              className="absolute top-2 right-2"
+              aria-label="모달 닫기"
+              disabled={Boolean(app.state.busy)}
+            >
+              <X aria-hidden="true" />
+            </Button>
+          </DialogClose>
         </DialogContent>
       </Dialog>
       <AlertDialog
@@ -338,7 +350,16 @@ export function ProjectManagement({ app }: { app: Console }) {
             removeButton.current?.focus();
           }}
         >
-          <AlertDialogHeader>
+          <AlertDialogCancel
+            variant="secondary"
+            size="icon"
+            className="absolute top-2 right-2"
+            aria-label="모달 닫기"
+            disabled={Boolean(app.state.busy)}
+          >
+            <X aria-hidden="true" />
+          </AlertDialogCancel>
+          <AlertDialogHeader className="pr-10">
             <AlertDialogTitle>프로젝트 삭제 확인</AlertDialogTitle>
             <AlertDialogDescription>
               ‘{removing?.name}’ 프로젝트를 삭제할까요? 프로젝트 폴더의 모든

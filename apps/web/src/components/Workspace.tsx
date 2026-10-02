@@ -15,7 +15,6 @@ import { DataTable } from "./DataTable";
 export function Workspace({ app }: { app: Console }) {
   const { state, project } = app;
   const deployments = byNewest(project?.deployments || [], "startedAt");
-  const latest = deployments[0];
   return (
     <div className="min-h-svh">
       <main className="mx-auto w-full max-w-7xl min-w-0 space-y-6 p-4 md:p-8">
@@ -52,11 +51,6 @@ export function Workspace({ app }: { app: Console }) {
               {project?.name ||
                 (state.projectId ? "프로젝트를 찾을 수 없습니다" : "프로젝트")}
             </h1>
-            {project && (
-              <StatusBadge
-                status={project.running ? "running" : latest?.status}
-              />
-            )}
           </div>
           <div className="flex flex-wrap items-center gap-3">
             {(!state.projectId || project) && (
@@ -181,64 +175,78 @@ export function Workspace({ app }: { app: Console }) {
             </EmptyHeader>
           </Empty>
         ) : (
-          <>
-            <DataTable
-              label="배포 이력"
-              rows={deployments}
-              rowKey={(d) => d.id}
-              onRowClick={app.selectDeployment}
-              disabled={Boolean(state.busy)}
-              selectedKey={state.deploymentId}
-              emptyMessage="배포 이력이 없습니다. 새 배포에서 파일과 버전을 선택하세요."
-              columns={[
-                {
-                  id: "version",
-                  header: "버전",
-                  className: "w-40",
-                  cell: (d) => (
-                    <Button
-                      variant="secondary"
-                      className="max-w-full justify-start"
-                      aria-pressed={d.id === state.deploymentId}
-                      disabled={Boolean(state.busy)}
-                      onClick={() => app.selectDeployment(d)}
-                    >
-                      <span className="truncate">{d.version}</span>
-                    </Button>
-                  ),
-                },
-                {
-                  id: "status",
-                  header: "상태",
-                  className: "w-28",
-                  cell: (d) => <StatusBadge status={d.status} />,
-                },
-                {
-                  id: "artifact",
-                  header: "배포 파일",
-                  cell: (d) => (
-                    <span className="block truncate">
-                      {project.artifacts.find((a) => a.id === d.artifactId)
-                        ?.name || "보관 종료된 파일"}
-                    </span>
-                  ),
-                },
-                {
-                  id: "started",
-                  header: "시작 시각",
-                  className: "w-44 tabular-nums",
-                  cell: (d) => formatDate(d.startedAt),
-                },
-                {
-                  id: "duration",
-                  header: "소요 시간",
-                  className: "w-28 tabular-nums",
-                  cell: (d) => formatDuration(d),
-                },
-              ]}
-            />
-            {state.deploymentId && <Logs app={app} />}
-          </>
+          <DataTable
+            label="배포 이력"
+            rows={deployments}
+            rowKey={(d) => d.id}
+            onRowClick={app.selectDeployment}
+            disabled={Boolean(state.busy)}
+            emptyMessage="배포 이력이 없습니다. 새 배포에서 파일과 버전을 선택하세요."
+            columns={[
+              {
+                id: "version",
+                header: "버전",
+                className: "w-40",
+                cell: (d) => (
+                  <a
+                    id={`deployment-${d.id}`}
+                    href={`/${encodeURIComponent(project.id)}/${encodeURIComponent(d.id)}`}
+                    className="inline-block max-w-full truncate rounded-sm font-medium underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-ring aria-disabled:pointer-events-none aria-disabled:opacity-50"
+                    aria-disabled={Boolean(state.busy)}
+                    onClick={(e) => {
+                      if (state.busy) {
+                        e.preventDefault();
+                        return;
+                      }
+                      if (
+                        e.button === 0 &&
+                        !e.ctrlKey &&
+                        !e.metaKey &&
+                        !e.shiftKey &&
+                        !e.altKey
+                      ) {
+                        e.preventDefault();
+                        app.selectDeployment(d);
+                      }
+                    }}
+                  >
+                    {d.version}
+                  </a>
+                ),
+              },
+              {
+                id: "status",
+                header: "상태",
+                className: "w-28",
+                cell: (d) => <StatusBadge status={d.status} />,
+              },
+              {
+                id: "artifact",
+                header: "배포 파일",
+                cell: (d) => (
+                  <span className="block truncate">
+                    {project.artifacts.find((a) => a.id === d.artifactId)
+                      ?.name || "보관 종료된 파일"}
+                  </span>
+                ),
+              },
+              {
+                id: "started",
+                header: "시작 시각",
+                className: "w-44 tabular-nums",
+                cell: (d) => formatDate(d.startedAt),
+              },
+              {
+                id: "duration",
+                header: "소요 시간",
+                className: "w-28 tabular-nums",
+                cell: (d) => formatDuration(d),
+              },
+            ]}
+          />
+        )}
+        {!state.loadingProjects && project && state.deploymentId && (
+          <Logs key={state.deploymentId} app={app} />
         )}
       </main>
     </div>

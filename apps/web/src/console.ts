@@ -43,16 +43,19 @@ type State = {
   refresh: number;
   visible: boolean;
 };
-const routeProject = () =>
-  window.location.pathname === "/" ? null : window.location.pathname.slice(1);
+const route = () => {
+  const [projectId, deploymentId] = window.location.pathname
+    .slice(1)
+    .split("/");
+  return { projectId: projectId || null, deploymentId: deploymentId || null };
+};
 const initial = (): State => ({
   loadingProjects: true,
   booting: true,
   user: null,
   csrf: "",
   projects: [],
-  projectId: routeProject(),
-  deploymentId: null,
+  ...route(),
   deployment: null,
   limits: null,
   serverBusy: false,
@@ -149,12 +152,12 @@ export function useConsole() {
       });
       if (epoch !== session.current || !mounted.current) return;
       const before = current.current;
-      const selectedId = routeProject();
-      const project = result.projects.find((p) => p.id === selectedId);
+      const selected = route();
+      const project = result.projects.find((p) => p.id === selected.projectId);
       const same = preserve && project?.id === before.projectId;
       const deployments = byNewest(project?.deployments || [], "startedAt");
       const deployment =
-        (same && deployments.find((d) => d.id === before.deploymentId)) || null;
+        deployments.find((d) => d.id === selected.deploymentId) || null;
       const artifacts = byNewest(project?.artifacts || [], "createdAt");
       update({
         loadingProjects: false,
@@ -162,8 +165,7 @@ export function useConsole() {
         limits: result.limits,
         serverBusy: result.uploading,
         managementBusy: result.managementBusy,
-        projectId: selectedId,
-        deploymentId: deployment?.id || null,
+        ...selected,
         deployment,
         artifactId:
           same && artifacts.some((a) => a.id === before.artifactId)
@@ -178,8 +180,7 @@ export function useConsole() {
   );
   const syncRoute = useCallback(() => {
     update({
-      projectId: routeProject(),
-      deploymentId: null,
+      ...route(),
       deployment: null,
       file: null,
       version: "",
@@ -189,11 +190,17 @@ export function useConsole() {
       loadingProjects: true,
     });
   }, [update]);
-  const navigate = (id: string | null, replace = false) => {
+  const navigate = (
+    id: string | null,
+    replace = false,
+    deploymentId: string | null = null,
+  ) => {
     window.history[replace ? "replaceState" : "pushState"](
       {},
       "",
-      id ? `/${encodeURIComponent(id)}` : "/",
+      id
+        ? `/${encodeURIComponent(id)}${deploymentId ? `/${encodeURIComponent(deploymentId)}` : ""}`
+        : "/",
     );
     syncRoute();
   };
@@ -247,7 +254,13 @@ export function useConsole() {
 
   // A selection owns its request and timer. Cleanup invalidates late responses.
   useEffect(() => {
-    if (!state.user || !state.projectId || !state.deploymentId) return;
+    if (
+      !state.user ||
+      !state.projectId ||
+      !state.deploymentId ||
+      !state.deployment
+    )
+      return;
     const projectId = state.projectId,
       deploymentId = state.deploymentId;
     let disposed = false;
@@ -304,7 +317,11 @@ export function useConsole() {
           !activeController.signal.aborted &&
           current.current.user
         )
-          update({ notice: describe(error), noticeError: true });
+          update(
+            error instanceof APIError && error.status === 404
+              ? { deployment: null, log: "" }
+              : { notice: describe(error), noticeError: true },
+          );
       } finally {
         if (
           !disposed &&
@@ -337,6 +354,7 @@ export function useConsole() {
     state.user,
     state.projectId,
     state.deploymentId,
+    state.deployment?.id,
     state.refresh,
     request,
     update,
@@ -423,13 +441,20 @@ export function useConsole() {
       });
     },
     selectDeployment: (deployment: Deployment) => {
-      if (!current.current.busy)
-        update({
-          deploymentId: deployment.id,
-          deployment,
-          log: "실행 로그를 불러오는 중…",
-          refresh: current.current.refresh + 1,
-        });
+      if (current.current.busy || !current.current.projectId) return;
+      navigation.current++;
+      navigate(current.current.projectId, false, deployment.id);
+      update({
+        loadingProjects: false,
+        deployment,
+        log: "실행 로그를 불러오는 중…",
+        refresh: current.current.refresh + 1,
+      });
+    },
+    closeLogs: () => {
+      navigation.current++;
+      navigate(current.current.projectId, true);
+      update({ loadingProjects: false });
     },
     upload: () =>
       action("upload", async (valid) => {
@@ -481,8 +506,10 @@ export function useConsole() {
               }
             : p,
         );
+        navigate(projectId, false, result.deployment.id);
         update({
           projects,
+          loadingProjects: false,
           deploymentId: result.deployment.id,
           deployment: result.deployment,
           log: "실행 로그를 불러오는 중…",

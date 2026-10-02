@@ -76,7 +76,7 @@ export function DeployForm({ app }: { app: Console }) {
           className="min-w-0 [&>[data-slot=scroll-area-viewport]]:max-h-[90svh] [&>[data-slot=scroll-area-viewport]>div]:block!"
         >
           <div className="space-y-5 p-6">
-            <DialogHeader>
+            <DialogHeader className="pr-10">
               <DialogTitle>새 배포</DialogTitle>
               <DialogDescription>
                 {project?.name}에 배포할 파일과 버전을 선택하세요.
@@ -254,18 +254,17 @@ export function DeployForm({ app }: { app: Console }) {
             </div>
           </div>
         </ScrollArea>
-        {!state.busy && (
-          <DialogClose asChild>
-            <Button
-              variant="secondary"
-              size="icon"
-              className="absolute top-2 right-2"
-              aria-label="Close"
-            >
-              <X />
-            </Button>
-          </DialogClose>
-        )}
+        <DialogClose asChild>
+          <Button
+            variant="secondary"
+            size="icon"
+            className="absolute top-2 right-2"
+            aria-label="모달 닫기"
+            disabled={Boolean(state.busy)}
+          >
+            <X aria-hidden="true" />
+          </Button>
+        </DialogClose>
       </DialogContent>
     </Dialog>
   );
