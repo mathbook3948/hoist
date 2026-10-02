@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import type { Project } from "../../../server/src/models";
 import type { Console } from "../console";
 import { Button } from "./ui/button";
+import { Plus, Settings, Archive } from "lucide-react";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Alert, AlertDescription } from "./ui/alert";
@@ -92,27 +93,33 @@ export function ProjectManagement({ app }: { app: Console }) {
           ref={addButton}
           id="project-add-button"
           variant="outline"
-          size="sm"
+          size="icon-sm"
+          aria-label="등록"
+          title="프로젝트 등록"
           disabled={app.managementBusy}
           onClick={() => open()}
         >
-          등록
+          <Plus aria-hidden="true" />
         </Button>
         <Button
           ref={editButton}
           id="project-edit-button"
           variant="outline"
-          size="sm"
+          size="icon-sm"
+          aria-label="설정"
+          title="프로젝트 설정"
           disabled={app.managementBusy || !app.project}
           onClick={() => open(app.project)}
         >
-          설정
+          <Settings aria-hidden="true" />
         </Button>
         <Button
           ref={removeButton}
           id="project-remove-button"
           variant="ghost"
-          size="sm"
+          size="icon-sm"
+          aria-label="등록 해제"
+          title="프로젝트 등록 해제"
           className="text-destructive hover:text-destructive"
           disabled={app.managementBusy || !app.project}
           onClick={() => {
@@ -121,7 +128,7 @@ export function ProjectManagement({ app }: { app: Console }) {
             setRemoving(app.project || null);
           }}
         >
-          등록 해제
+          <Archive aria-hidden="true" />
         </Button>
       </div>
       <Dialog

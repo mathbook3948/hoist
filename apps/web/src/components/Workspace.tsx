@@ -9,7 +9,7 @@ import { Alert, AlertDescription } from "./ui/alert";
 import { Badge } from "./ui/badge";
 import { Separator } from "./ui/separator";
 import { StatusBadge } from "./StatusBadge";
-import { RefreshCw, LogOut, X } from "lucide-react";
+import { LogOut, X } from "lucide-react";
 
 export function Workspace({ app }: { app: Console }) {
   const { state, project } = app;
@@ -77,15 +77,6 @@ export function Workspace({ app }: { app: Console }) {
           <h1 className="min-w-0 truncate text-2xl font-semibold tracking-tight">
             {project?.name || "프로젝트"}
           </h1>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={Boolean(state.busy)}
-            onClick={() => void app.refresh()}
-          >
-            <RefreshCw />
-            새로고침
-          </Button>
         </div>
         <ProjectManagement app={app} />
         {!project ? (

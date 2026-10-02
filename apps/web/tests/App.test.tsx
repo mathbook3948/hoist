@@ -147,7 +147,7 @@ const callsTo = (
 ) => fetcher.mock.calls.filter(([path]) => String(path).endsWith(suffix));
 
 describe("React deployment console", () => {
-  test("a project request failure after login is visible and refresh can recover", async () => {
+  test("a project request failure after login is visible", async () => {
     const { data, user } = fixture(false);
     data.intercept = (path) =>
       path === "/api/projects"
@@ -160,9 +160,6 @@ describe("React deployment console", () => {
     expect(await screen.findByRole("status")).toHaveTextContent(
       "Projects unavailable",
     );
-    data.intercept = undefined;
-    await user.click(screen.getByRole("button", { name: /새로고침/ }));
-    await ready();
   });
   test("unauthenticated boot shows login and does not request project data", async () => {
     const { fetcher } = fixture(false);
@@ -406,7 +403,11 @@ describe("React deployment console", () => {
     expect(screen.getByLabelText("프로젝트 이름")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "닫기" }));
     data.managementBusy = true;
-    await user.click(screen.getByRole("button", { name: /새로고침/ }));
+    await user.click(
+      within(
+        screen.getByRole("navigation", { name: "프로젝트 선택" }),
+      ).getByRole("button", { name: "Demo" }),
+    );
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "등록" })).toBeDisabled(),
     );
@@ -438,7 +439,11 @@ describe("React deployment console", () => {
     const { data, user } = fixture();
     await ready();
     data.authenticated = false;
-    await user.click(screen.getByRole("button", { name: /새로고침/ }));
+    await user.click(
+      within(
+        screen.getByRole("navigation", { name: "프로젝트 선택" }),
+      ).getByRole("button", { name: "Demo" }),
+    );
     await screen.findByRole("heading", { name: "로그인" });
     expect(screen.getByRole("alert")).toHaveTextContent("세션이 만료");
   });

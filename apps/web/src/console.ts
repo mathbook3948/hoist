@@ -373,11 +373,6 @@ export function useConsole() {
           refresh: current.current.refresh + 1,
         });
     },
-    refresh: () =>
-      action("refresh", async (valid) => {
-        await loadProjects();
-        if (valid()) update({ refresh: current.current.refresh + 1 });
-      }),
     upload: () =>
       action("upload", async (valid) => {
         const { file, projectId, limits } = current.current;
