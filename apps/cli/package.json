@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@hoist/server": "workspace:*",
-    "@hoist/web": "workspace:*"
+    "@hoist/web": "workspace:*",
+    "@inquirer/password": "^5.2.2"
   }
 }

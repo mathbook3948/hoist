@@ -2,9 +2,11 @@ import { initData, Store, defaultConfig, validId } from "@hoist/server/store";
 import { acquireDataLock, serve } from "@hoist/server/runtime";
 import { parseProject } from "@hoist/server/projects";
 import { assetsDir } from "@hoist/web/assets";
+import { readPassword } from "./password";
+import { resolveDataDir } from "@hoist/server/paths";
 const HELP = `Hoist (Bun, Linux)
   hoist init --data-dir /absolute/install-dir
-  hoist user set USER --password-stdin --data-dir DIR
+  hoist user set USER [--password-stdin] --data-dir DIR
   hoist user list --data-dir DIR
   hoist user remove USER --data-dir DIR
   hoist project set ID --name NAME --script /absolute/trusted.sh --timeout 300 --data-dir DIR
@@ -14,9 +16,12 @@ const HELP = `Hoist (Bun, Linux)
   hoist config set KEY VALUE --data-dir DIR
   hoist serve --data-dir DIR
 The data directory contains hoist.sqlite, deployment files and bounded deployment logs.
-Stop the server before changing accounts, projects or config. Supply passwords over stdin, never argv.
+Stop the server before changing accounts, projects or config.
+Passwords are prompted with masked input and confirmation. Use --password-stdin for automation, never argv.
+--data-dir is optional: flag > HOIST_DATA_DIR > ~/.hoist/settings.json (dataDir) > ~/.hoist/data.
+The development CLI defaults to the repository .data instead of home settings.
 `;
-export async function main(argv: string[]) {
+export async function main(argv: string[], developmentDataDir?: string) {
   if (!argv.length || argv.includes("--help")) {
     console.log(HELP);
     return;
@@ -38,8 +43,9 @@ export async function main(argv: string[]) {
       options.set(argv[i], argv[++i]);
     } else positional.push(argv[i]);
   }
-  const data = options.get("--data-dir") || process.env.HOIST_DATA_DIR;
-  if (!data) throw new Error("--data-dir is required");
+  const data = resolveDataDir(options.get("--data-dir"), {
+    developmentDataDir,
+  });
   const { dir } = initData(data);
   const command = positional[0];
   if (command === "serve") {
@@ -90,17 +96,7 @@ export async function main(argv: string[]) {
         const old = store.getAccount();
         if (old && old.username !== username)
           throw new Error("Only one administrator account is supported");
-        if (!options.has("--password-stdin"))
-          throw new Error("--password-stdin is required");
-        let password = (await Bun.stdin.text()).replace(/\r?\n$/, "");
-        if (
-          password.length < 12 ||
-          Buffer.byteLength(password, "utf8") > 72 ||
-          /[\x00-\x1f\x7f]/.test(password)
-        )
-          throw new Error(
-            "Password must be at least 12 characters, at most 72 UTF-8 bytes, without control characters",
-          );
+        let password = await readPassword(options.has("--password-stdin"));
         const passwordHash = await Bun.password.hash(password, {
           algorithm: "bcrypt",
           cost: 12,

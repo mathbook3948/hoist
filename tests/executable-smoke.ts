@@ -1,6 +1,14 @@
 import assert from "node:assert/strict";
 import { Database } from "bun:sqlite";
-import { copyFileSync, mkdtempSync, rmSync, readdirSync } from "node:fs";
+import {
+  copyFileSync,
+  mkdtempSync,
+  rmSync,
+  readdirSync,
+  mkdirSync,
+  writeFileSync,
+  existsSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { randomBytes } from "node:crypto";
@@ -10,14 +18,15 @@ const tmp = mkdtempSync(join(tmpdir(), "hoist-binary-"));
 const name = process.platform === "win32" ? "hoist.exe" : "hoist";
 const executable = join(tmp, name);
 const data = join(tmp, "data");
+const home = join(tmp, "home");
 const password = randomBytes(24).toString("hex");
-const env = { ...process.env, PATH: "" };
+const env = { ...process.env, PATH: "", HOME: home, USERPROFILE: home };
 delete env.BUN_BE_BUN;
 delete env.HOIST_DATA_DIR;
 let server: ReturnType<typeof Bun.spawn> | undefined;
 
 async function cli(args: string[], input?: string) {
-  const child = Bun.spawn([executable, ...args, "--data-dir", data], {
+  const child = Bun.spawn([executable, ...args], {
     cwd: tmp,
     env,
     stdin: input === undefined ? "ignore" : "pipe",
@@ -40,6 +49,22 @@ async function cli(args: string[], input?: string) {
 try {
   copyFileSync(join(root, "dist", name), executable);
   assert.match(await cli(["--help"]), /hoist serve/);
+  mkdirSync(home);
+  const homeProbe = Bun.spawnSync(
+    [process.execPath, "-e", 'console.log(require("node:os").homedir())'],
+    { env },
+  );
+  assert.equal(
+    homeProbe.stdout.toString().trim(),
+    home,
+    "Test HOME must be isolated",
+  );
+  await cli(["init"]);
+  assert.ok(existsSync(join(home, ".hoist/data/hoist.sqlite")));
+  writeFileSync(
+    join(home, ".hoist/settings.json"),
+    JSON.stringify({ dataDir: data }),
+  );
   await cli(["init"]);
   const migrated = new Database(join(data, "hoist.sqlite"), { readonly: true });
   try {
@@ -61,7 +86,7 @@ try {
   await reserve.stop(true);
   await cli(["config", "set", "port", String(port)]);
   const origin = `http://127.0.0.1:${port}`;
-  server = Bun.spawn([executable, "serve", "--data-dir", data], {
+  server = Bun.spawn([executable, "serve"], {
     cwd: tmp,
     env,
     stdout: "ignore",

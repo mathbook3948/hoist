@@ -11,7 +11,7 @@
     "dev:server": "bun run --filter @hoist/server dev",
     "start": "bun apps/server/src/index.ts",
     "server": "bun apps/server/src/index.ts",
-    "cli": "bun apps/cli/src/index.ts",
+    "cli": "bun apps/cli/src/dev.ts",
     "build": "bun run --filter @hoist/cli build",
     "build:linux": "bun run --filter @hoist/cli build:linux",
     "build:web": "bun run --filter @hoist/web build",

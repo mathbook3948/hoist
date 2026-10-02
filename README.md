@@ -15,10 +15,8 @@ bun run build:web
 # 설정/계정/업로드/로그는 코드 밖의 지정한 설치 폴더에 저장
 bun run cli init --data-dir "$HOME/.local/share/hoist"
 
-# 비밀번호가 argv나 셸 기록에 들어가지 않도록 stdin 사용
-read -rs -p 'Admin password (12+ chars, <=72 UTF-8 bytes): ' HOIST_PASSWORD; printf '\n'
-printf '%s\n' "$HOIST_PASSWORD" | bun run cli user set admin --password-stdin --data-dir "$HOME/.local/share/hoist"
-unset HOIST_PASSWORD
+# CLI에서 비밀번호와 확인을 숨김 입력 (12자 이상, UTF-8 72바이트 이하)
+bun run cli user set admin --data-dir "$HOME/.local/share/hoist"
 
 # 무해한 예제: 파일/서비스를 변경하지 않고 받은 인수만 로그에 출력
 mkdir -p "$HOME/.local/share/hoist/scripts"
@@ -31,6 +29,18 @@ bun run cli serve --data-dir "$HOME/.local/share/hoist"
 서버 실행 후 `http://127.0.0.1:3000`을 열어 직접 만든 계정으로 로그인합니다. 원격 서버에서는 SSH 터널을 권장합니다: `ssh -L 3000:127.0.0.1:3000 server`. 초기 계정, 기본 비밀번호, 공개 포트는 제공하지 않습니다. `serve`를 첫 명령으로 실행해도 폴더와 `hoist.sqlite`가 생성됩니다. 빈 계정 목록으로는 로그인이 불가능하므로 서버를 멈추고 계정을 만드세요.
 
 ## 설치 폴더 구조
+
+설치된 실행파일은 옵션 없이 `hoist init`, `hoist user set admin`, `hoist serve`로 실행할 수 있습니다. 데이터 경로 우선순위는 `--data-dir` → `HOIST_DATA_DIR` → `~/.hoist/settings.json`의 `dataDir` → `~/.hoist/data`입니다. `~`는 실행 중인 OS 사용자의 홈 디렉터리입니다 (Windows에서는 사용자 프로필 폴더).
+
+경로를 바꿀 때만 `~/.hoist/settings.json`을 직접 만드세요. 예:
+
+```json
+{
+  "dataDir": "/var/lib/hoist"
+}
+```
+
+파일이 없으면 기본 경로를 사용하며 설정 파일을 자동 생성하거나 덮어쓰지 않습니다. 상대 경로는 설정 파일이 있는 `~/.hoist` 기준이며 `~/data`도 사용할 수 있습니다. 잘못된 JSON이나 `dataDir`은 오류로 중단합니다. 명령행·환경 변수의 상대 경로는 현재 작업 디렉터리 기준입니다. 계정·프로젝트·서버 설정은 계속 SQLite에 저장하며 `settings.json`에는 DB 위치만 지정합니다. 기존 데이터는 자동으로 이동하지 않으므로 기존 DB를 계속 쓸 때는 그 경로를 설정하세요. 시스템 서비스는 서비스 사용자의 홈을 사용하므로 제공한 systemd 예제처럼 `--data-dir /var/lib/hoist`를 고정해도 됩니다.
 
 ```text
 DATA_DIR/
@@ -217,10 +227,13 @@ mise exec -- bun run dev
 최초 로그인에 필요한 관리자 계정은 서버를 멈춘 뒤 만드세요. PowerShell에서는 아래 명령으로 비밀번호를 입력할 수 있습니다 (12자 이상, UTF-8 기준 72바이트 이하).
 
 ```powershell
-Read-Host -MaskInput 'Admin password' | mise exec -- bun run cli user set admin --password-stdin --data-dir .data
+bun run cli user set admin
+# Bun이 PATH에 없다면: mise exec -- bun run cli user set admin
 ```
 
-Linux에서는 위 빠른 시작의 `--password-stdin` 예제에서 데이터 폴더를 `.data`로 지정하세요. 실제 배포 스크립트 실행은 Linux 환경이 필요합니다.
+Windows와 Linux 모두 같은 명령을 사용합니다. 비밀번호와 확인 입력은 `*`로 표시되며, Ctrl+C로 취소하면 계정을 변경하지 않습니다. 자동화에서는 `--password-stdin`으로 표준 입력을 전달할 수 있습니다. 실제 배포 스크립트 실행은 Linux 환경이 필요합니다.
+
+`bun run cli`와 `bun run dev`는 홈 설정을 읽지 않고 저장소의 `.data`를 기본값으로 사용합니다. `HOIST_DATA_DIR`로 변경할 수 있으며 CLI의 `--data-dir`이 최우선입니다. 설치 경로 규칙을 소스에서 확인하려면 `bun apps/cli/src/index.ts ...` 또는 `bun run server`를 사용하세요.
 
 ## 코드 포맷
 

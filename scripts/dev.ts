@@ -2,9 +2,12 @@ import { resolve, dirname } from "node:path";
 import { createRequire } from "node:module";
 import { initData, Store } from "../apps/server/src/store";
 import { acquireDataLock } from "../apps/server/src/runtime";
+import { resolveDataDir } from "../apps/server/src/paths";
 
 const root = resolve(import.meta.dir, "..");
-const { dir } = initData(process.env.HOIST_DATA_DIR || resolve(root, ".data"));
+const { dir } = initData(
+  resolveDataDir(undefined, { developmentDataDir: resolve(root, ".data") }),
+);
 const release = acquireDataLock(dir);
 let config;
 let store: Store | undefined;

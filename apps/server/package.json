@@ -11,7 +11,8 @@
     ".": "./src/server.ts",
     "./store": "./src/store.ts",
     "./projects": "./src/projects.ts",
-    "./runtime": "./src/runtime.ts"
+    "./runtime": "./src/runtime.ts",
+    "./paths": "./src/paths.ts"
   },
   "dependencies": {
     "@hoist/web": "workspace:*"
