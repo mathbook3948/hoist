@@ -3,6 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "scripts": {
+    "dev": "bun --watch src/main.ts serve --data-dir .data",
     "start": "bun src/main.ts serve",
     "test": "bun test",
     "test:frontend": "node --experimental-vm-modules tests/frontend-dom.cjs",

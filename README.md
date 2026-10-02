@@ -138,6 +138,24 @@ public/
 
 프런트엔드는 브라우저 기본 ES 모듈을 사용하므로 별도 빌드 없이 실행합니다. DOM 테스트는 Node의 VM 모듈로 실제 모듈들을 불러오며, `test:frontend` 명령에 필요한 플래그가 포함되어 있습니다.
 
+## 개발 서버
+
+```bash
+bun run dev
+# mise로 Bun을 설치했고 PATH에 없다면
+mise exec -- bun run dev
+```
+
+개발 데이터는 Git에서 제외된 `.data/`에 저장하며 `http://127.0.0.1:3000`에서 실행합니다. 서버 코드 변경 시 자동으로 재시작합니다. `public/`의 HTML/CSS/JS 변경은 브라우저를 새로고침하면 반영됩니다. 서버 재시작 시 로그인 세션은 초기화됩니다.
+
+최초 로그인에 필요한 관리자 계정은 서버를 멈춘 뒤 만드세요. PowerShell에서는 아래 명령으로 비밀번호를 입력할 수 있습니다 (12자 이상, UTF-8 기준 72바이트 이하).
+
+```powershell
+Read-Host -MaskInput 'Admin password' | mise exec -- bun src/main.ts user set admin --password-stdin --data-dir .data
+```
+
+Linux에서는 위 빠른 시작의 `--password-stdin` 예제에서 데이터 폴더를 `.data`로 지정하세요. 실제 배포 스크립트 실행은 Linux 환경이 필요합니다.
+
 ## 코드 포맷
 
 개발 의존성을 설치한 뒤 Prettier 기본 규칙으로 포맷을 적용합니다.
