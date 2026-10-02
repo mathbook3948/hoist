@@ -2,9 +2,9 @@ import { test, expect } from "bun:test";
 import { mkdtempSync, writeFileSync, rmSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Store, type Project } from "../src/store";
-import { createArtifacts } from "../src/artifacts";
-import { createDeployments } from "../src/deployments";
+import { Store, type Project } from "../apps/server/src/store";
+import { createArtifacts } from "../apps/server/src/artifacts";
+import { createDeployments } from "../apps/server/src/deployments";
 
 function fixture(dir: string, script: string) {
   const store = new Store(dir);
@@ -19,7 +19,7 @@ function fixture(dir: string, script: string) {
   const deployments = createDeployments(
     store,
     config,
-    join(import.meta.dir, "../public"),
+    join(import.meta.dir, "../apps/web/dist"),
   );
   const artifacts = createArtifacts(store, config, deployments.isRunning);
   return { store, projects, deployments, artifacts };

@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
-import { Store } from "../src/store";
+import { Store } from "../apps/server/src/store";
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const tmp = mkdtempSync(join(tmpdir(), "hoist-rss-"));
 const data = join(tmp, "data");
@@ -35,7 +35,7 @@ store.close();
 const p = Bun.spawn(
   [
     process.execPath,
-    join(import.meta.dir, "../src/main.ts"),
+    join(import.meta.dir, "../apps/cli/src/index.ts"),
     "serve",
     "--data-dir",
     data,

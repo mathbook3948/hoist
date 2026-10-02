@@ -1,0 +1,14 @@
+{
+  "name": "@hoist/cli",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "build": "bun build.ts",
+    "build:linux": "bun build.ts bun-linux-x64"
+  },
+  "dependencies": {
+    "@hoist/server": "workspace:*",
+    "@hoist/web": "workspace:*"
+  }
+}

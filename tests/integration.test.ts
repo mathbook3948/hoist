@@ -14,7 +14,8 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
-import { initData, Store } from "../src/store";
+import { initData, Store } from "../apps/server/src/store";
+import { staticFiles } from "../apps/web/src/assets";
 const root = join(import.meta.dir, "..");
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 test("CLI setup, authentication, upload boundaries, deployment argv, locks, bounded logs, cancel, timeout and restart", async () => {
@@ -26,7 +27,7 @@ test("CLI setup, authentication, upload boundaries, deployment argv, locks, boun
     const p = Bun.spawn(
       [
         process.execPath,
-        join(root, "src/main.ts"),
+        join(root, "apps/cli/src/index.ts"),
         ...args,
         "--data-dir",
         data,
@@ -99,7 +100,7 @@ test("CLI setup, authentication, upload boundaries, deployment argv, locks, boun
       server = Bun.spawn(
         [
           process.execPath,
-          join(root, "src/main.ts"),
+          join(root, "apps/cli/src/index.ts"),
           "serve",
           "--data-dir",
           data,
@@ -115,17 +116,14 @@ test("CLI setup, authentication, upload boundaries, deployment argv, locks, boun
       throw new Error("Server failed to start");
     };
     await start();
-    for (const [path, mime] of [
-      ["/", "text/html"],
-      ["/app.js", "text/javascript"],
-      ["/state.js", "text/javascript"],
-      ["/api.js", "text/javascript"],
-      ["/render.js", "text/javascript"],
-      ["/polling.js", "text/javascript"],
-      ["/events.js", "text/javascript"],
-      ["/projects.js", "text/javascript"],
-      ["/style.css", "text/css"],
-    ]) {
+    expect(staticFiles.has("/")).toBe(true);
+    for (const path of staticFiles.keys()) {
+      const mime =
+        path === "/"
+          ? "text/html"
+          : path.endsWith(".js")
+            ? "text/javascript"
+            : "text/css";
       const r = await fetch(origin + path);
       expect(r.status).toBe(200);
       expect(r.headers.get("content-type")).toContain(mime);
@@ -349,7 +347,7 @@ test("CLI setup, authentication, upload boundaries, deployment argv, locks, boun
     const blocked = await Bun.spawn(
       [
         process.execPath,
-        join(root, "src/main.ts"),
+        join(root, "apps/cli/src/index.ts"),
         "user",
         "list",
         "--data-dir",
@@ -436,8 +434,8 @@ test("CLI setup, authentication, upload boundaries, deployment argv, locks, boun
   }
 }, 30000);
 
-import { smallJSON } from "../src/http";
-import { startServer } from "../src/server";
+import { smallJSON } from "../apps/server/src/http";
+import { startServer } from "../apps/server/src/server";
 test("JSON body absolute deadline cancels a trickling request", async () => {
   let cancelled = false;
   const req = new Request("http://127.0.0.1/", {
@@ -456,7 +454,7 @@ test("JSON body absolute deadline cancels a trickling request", async () => {
   expect(cancelled).toBe(true);
 }, 12000);
 
-import { main } from "../src/main";
+import { main } from "../apps/cli/src/main";
 test("a symlinked data-directory ancestor cannot register an uploaded artifact as script", async () => {
   const tmp = mkdtempSync(join(tmpdir(), "hoist-path-"));
   try {

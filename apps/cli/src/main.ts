@@ -1,25 +1,18 @@
-import {
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  writeFileSync,
-  rmSync,
-} from "node:fs";
-import { resolve, join } from "node:path";
-import { initData, Store, defaultConfig, validId } from "./store";
-import { startServer } from "./server";
-import { parseProject } from "./projects";
+import { initData, Store, defaultConfig, validId } from "@hoist/server/store";
+import { acquireDataLock, serve } from "@hoist/server/runtime";
+import { parseProject } from "@hoist/server/projects";
+import { assetsDir } from "@hoist/web/assets";
 const HELP = `Hoist (Bun, Linux)
-  bun src/main.ts init --data-dir /absolute/install-dir
-  bun src/main.ts user set USER --password-stdin --data-dir DIR
-  bun src/main.ts user list --data-dir DIR
-  bun src/main.ts user remove USER --data-dir DIR
-  bun src/main.ts project set ID --name NAME --script /absolute/trusted.sh --timeout 300 --data-dir DIR
-  bun src/main.ts project list --data-dir DIR
-  bun src/main.ts project remove ID --data-dir DIR
-  bun src/main.ts config list --data-dir DIR
-  bun src/main.ts config set KEY VALUE --data-dir DIR
-  bun src/main.ts serve --data-dir DIR
+  hoist init --data-dir /absolute/install-dir
+  hoist user set USER --password-stdin --data-dir DIR
+  hoist user list --data-dir DIR
+  hoist user remove USER --data-dir DIR
+  hoist project set ID --name NAME --script /absolute/trusted.sh --timeout 300 --data-dir DIR
+  hoist project list --data-dir DIR
+  hoist project remove ID --data-dir DIR
+  hoist config list --data-dir DIR
+  hoist config set KEY VALUE --data-dir DIR
+  hoist serve --data-dir DIR
 The data directory contains hoist.sqlite, deployment files and bounded deployment logs.
 Stop the server before changing accounts, projects or config. Supply passwords over stdin, never argv.
 `;
@@ -48,55 +41,12 @@ export async function main(argv: string[]) {
   const data = options.get("--data-dir") || process.env.HOIST_DATA_DIR;
   if (!data) throw new Error("--data-dir is required");
   const { dir } = initData(data);
-  const lock = join(dir, "runtime.lock");
-  function acquire() {
-    try {
-      mkdirSync(lock, { mode: 0o700 });
-    } catch {
-      if (!existsSync(join(lock, "pid")))
-        throw new Error(
-          "Data directory locked; inspect runtime.lock if previous process crashed",
-        );
-      const pid = Number(readFileSync(join(lock, "pid"), "utf8"));
-      let live = true;
-      try {
-        process.kill(pid, 0);
-      } catch (e: any) {
-        if (e.code === "ESRCH") live = false;
-      }
-      if (live)
-        throw new Error("Stop the running server before making changes");
-      rmSync(lock, { recursive: true });
-      mkdirSync(lock, { mode: 0o700 });
-    }
-    writeFileSync(join(lock, "pid"), String(process.pid), { mode: 0o600 });
-  }
   const command = positional[0];
   if (command === "serve") {
-    acquire();
-    let store: Store | undefined;
-    let runtime: ReturnType<typeof startServer>;
-    try {
-      store = new Store(dir);
-      runtime = startServer(store);
-    } catch (e) {
-      store?.close();
-      rmSync(lock, { recursive: true });
-      throw e;
-    }
-    let exiting = false;
-    const shutdown = async () => {
-      if (exiting) return;
-      exiting = true;
-      await runtime.stop();
-      rmSync(lock, { recursive: true });
-      process.exit(0);
-    };
-    process.on("SIGTERM", shutdown);
-    process.on("SIGINT", shutdown);
+    serve(dir);
     return;
   }
-  acquire();
+  const release = acquireDataLock(dir);
   let store: Store | undefined;
   try {
     store = new Store(dir);
@@ -176,16 +126,12 @@ export async function main(argv: string[]) {
       }
       if (!id || !validId(id)) throw new Error("Invalid project ID");
       if (action === "set") {
-        const project = parseProject(
-          dir,
-          resolve(import.meta.dir, "../public"),
-          {
-            id,
-            name: options.get("--name") || id,
-            script: options.get("--script"),
-            timeoutSeconds: Number(options.get("--timeout") || 300),
-          },
-        );
+        const project = parseProject(dir, assetsDir, {
+          id,
+          name: options.get("--name") || id,
+          script: options.get("--script"),
+          timeoutSeconds: Number(options.get("--timeout") || 300),
+        });
         store.setProject(project);
         console.log(`Project saved: ${id}`);
         return;
@@ -199,11 +145,6 @@ export async function main(argv: string[]) {
     throw new Error("Unknown command. Use --help");
   } finally {
     store?.close();
-    rmSync(lock, { recursive: true });
+    release();
   }
 }
-if (import.meta.main)
-  main(process.argv.slice(2)).catch((e) => {
-    console.error(e.message);
-    process.exitCode = 1;
-  });

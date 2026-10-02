@@ -2,12 +2,23 @@
   "name": "hoist",
   "private": true,
   "version": "0.1.0",
+  "workspaces": [
+    "apps/*"
+  ],
   "scripts": {
-    "dev": "bun --watch src/main.ts serve --data-dir .data",
-    "start": "bun src/main.ts serve",
-    "test": "bun test",
-    "test:frontend": "node --experimental-vm-modules tests/frontend-dom.cjs",
-    "check": "bun build src/main.ts --target=bun --outfile=/tmp/hoist-check.js",
+    "dev": "bun scripts/dev.ts",
+    "dev:web": "bun run --filter @hoist/web dev",
+    "dev:server": "bun run --filter @hoist/server dev",
+    "start": "bun apps/server/src/index.ts",
+    "server": "bun apps/server/src/index.ts",
+    "cli": "bun apps/cli/src/index.ts",
+    "build": "bun run --filter @hoist/cli build",
+    "build:linux": "bun run --filter @hoist/cli build:linux",
+    "build:web": "bun run --filter @hoist/web build",
+    "test": "bun run build:web && bun test ./tests",
+    "test:binary": "bun run build && bun tests/executable-smoke.ts",
+    "test:frontend": "bun run --filter @hoist/web test",
+    "check": "bun run --filter @hoist/web check && bun build apps/cli/src/index.ts --target=bun --outdir=dist/check",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
   },

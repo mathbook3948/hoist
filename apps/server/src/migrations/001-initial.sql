@@ -1,5 +1,4 @@
-// Fresh development installs only. No legacy JSON import.
-export const schema = `
+
 CREATE TABLE IF NOT EXISTS settings (
   id INTEGER PRIMARY KEY CHECK (id = 1),
   host TEXT NOT NULL, port INTEGER NOT NULL,
@@ -31,4 +30,3 @@ CREATE TABLE IF NOT EXISTS deployments (
   startedAt TEXT NOT NULL, finishedAt TEXT, exitCode INTEGER
 ) STRICT;
 CREATE INDEX IF NOT EXISTS deployments_project ON deployments(projectId);
-`;

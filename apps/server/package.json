@@ -1,0 +1,19 @@
+{
+  "name": "@hoist/server",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "start": "bun src/index.ts",
+    "dev": "bun --watch src/index.ts --data-dir ../../.data"
+  },
+  "exports": {
+    ".": "./src/server.ts",
+    "./store": "./src/store.ts",
+    "./projects": "./src/projects.ts",
+    "./runtime": "./src/runtime.ts"
+  },
+  "dependencies": {
+    "@hoist/web": "workspace:*"
+  }
+}

@@ -8,9 +8,9 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Store, GiB, defaultLimits } from "../src/store";
-import { startServer } from "../src/server";
-import { main } from "../src/main";
+import { Store, GiB, defaultLimits } from "../apps/server/src/store";
+import { startServer } from "../apps/server/src/server";
+import { main } from "../apps/cli/src/main";
 
 async function fixture(tmp: string) {
   const dir = join(tmp, "data");

@@ -1,4 +1,6 @@
 node_modules/
+.bun-cache/
+dist/
 .data/
 data/
 artifacts/

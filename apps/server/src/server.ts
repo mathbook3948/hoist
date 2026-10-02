@@ -1,23 +1,10 @@
-import { join } from "node:path";
+import { assetsDir as assets, staticFiles } from "@hoist/web/assets";
 import { Store } from "./store";
 import { HTTPError, fail, json, security, smallJSON } from "./http";
 import { createAuth } from "./auth";
 import { createArtifacts } from "./artifacts";
 import { createDeployments } from "./deployments";
 import { createProjects } from "./projects";
-
-const assets = join(import.meta.dir, "../public");
-const staticPaths = new Set([
-  "/",
-  "/app.js",
-  "/style.css",
-  "/state.js",
-  "/api.js",
-  "/render.js",
-  "/polling.js",
-  "/events.js",
-  "/projects.js",
-]);
 
 export function startServer(store: Store) {
   const dir = store.dir;
@@ -52,21 +39,26 @@ export function startServer(store: Store) {
           fail(403, "Host rejected");
         const path = url.pathname;
         const method = req.method;
-        if (method === "GET" && staticPaths.has(path))
-          return new Response(
-            Bun.file(join(assets, path === "/" ? "index.html" : path.slice(1))),
-            {
-              headers: {
-                ...security,
-                "Content-Type":
-                  path === "/"
-                    ? "text/html; charset=utf-8"
-                    : path.endsWith(".js")
-                      ? "text/javascript; charset=utf-8"
-                      : "text/css; charset=utf-8",
-              },
-            },
+        const staticFile = staticFiles.get(path);
+        if (method === "GET" && path === "/" && !staticFile)
+          fail(
+            503,
+            "Web build missing. Run bun run build:web, or open the Vite development server.",
           );
+        if (method === "GET" && staticFile)
+          return new Response(Bun.file(staticFile), {
+            headers: {
+              ...security,
+              "Content-Type":
+                path === "/"
+                  ? "text/html; charset=utf-8"
+                  : path.endsWith(".js")
+                    ? "text/javascript; charset=utf-8"
+                    : path.endsWith(".css")
+                      ? "text/css; charset=utf-8"
+                      : Bun.file(staticFile).type || "application/octet-stream",
+            },
+          });
         if (path === "/api/login" && method === "POST")
           return await auth.login(
             req,

@@ -11,7 +11,7 @@ import {
   closeSync,
 } from "node:fs";
 import { resolve, join } from "node:path";
-import { schema } from "./schema";
+import { migrate } from "./migrations";
 import {
   type Account,
   type Project,
@@ -76,11 +76,11 @@ export class Store {
       this.db.exec(
         "PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000; PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL;",
       );
+      migrate(this.db);
       this.db.transaction(() => {
-        this.db.exec(schema);
         this.db
           .query(
-            `INSERT OR IGNORE INTO settings VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            `INSERT OR IGNORE INTO settings (id, host, port, publicOrigin, maxArtifactBytes, maxStorageBytes, uploadTimeoutSeconds, artifactRetention, historyRetention, maxLogBytes, sessionHours) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           )
           .run(
             defaultConfig.host,

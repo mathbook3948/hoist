@@ -8,8 +8,8 @@ Type=simple
 User=hoist
 Group=hoist
 WorkingDirectory=/opt/hoist
-# Use the installed absolute Bun executable path on your server.
-ExecStart=/opt/bun/bin/bun /opt/hoist/src/main.ts serve --data-dir /var/lib/hoist
+# Copy the Linux executable built with bun run build:linux to this path.
+ExecStart=/opt/hoist/hoist serve --data-dir /var/lib/hoist
 StateDirectory=hoist
 StateDirectoryMode=0700
 UMask=0077

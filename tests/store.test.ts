@@ -9,7 +9,11 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Store, storedArtifactBytes, type Deployment } from "../src/store";
+import {
+  Store,
+  storedArtifactBytes,
+  type Deployment,
+} from "../apps/server/src/store";
 
 const project = {
   id: "demo",
