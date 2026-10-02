@@ -3,7 +3,7 @@ import type { Config, Store } from "./store";
 import { fail, json, smallJSON } from "./http";
 
 const token = () => randomBytes(32).toString("hex");
-const COOKIE_PREFIX = "hoist_session=";
+const COOKIE_PREFIX = "hoist.session=";
 const sessionToken = (req: Request) =>
   (req.headers.get("cookie") || "")
     .split(";")

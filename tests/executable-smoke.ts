@@ -143,6 +143,8 @@ try {
   });
   assert.equal(login.status, 200);
   const cookie = login.headers.get("set-cookie")!.split(";")[0];
+  assert.match(cookie, /^hoist\.session=[a-f0-9]{64}$/);
+  assert.match(login.headers.get("set-cookie")!, /Max-Age=28800/);
   const csrf = (await login.json()).csrf;
   assert.ok(csrf);
   const projects = await fetch(origin + "/api/projects", {
@@ -178,6 +180,25 @@ try {
   );
   assert.equal((await scriptResponse.json()).scriptContent, scriptContent);
   assert.equal(await Bun.file(project.script).text(), scriptContent);
+  const oldCookie = cookie.replace("hoist.session=", "hoist_session=");
+  assert.equal(
+    (await fetch(origin + "/api/me", { headers: { Cookie: oldCookie } }))
+      .status,
+    401,
+  );
+  const logout = await fetch(origin + "/api/logout", {
+    method: "POST",
+    headers: projectHeaders,
+  });
+  assert.equal(logout.status, 200);
+  assert.match(
+    logout.headers.get("set-cookie")!,
+    /^hoist\.session=;.*Max-Age=0/,
+  );
+  assert.equal(
+    (await fetch(origin + "/api/me", { headers: { Cookie: cookie } })).status,
+    401,
+  );
   server.kill();
   await server.exited;
   writeFileSync(

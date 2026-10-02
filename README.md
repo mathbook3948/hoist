@@ -139,7 +139,7 @@ CLI에서는 `hoist project create '이름'`으로 생성하고 `--script FILE`�
 - `uploadTimeoutSeconds`: 3600초 (업로드 전체 제한 시간)
 - `artifactRetention`: 프로젝트당 최근 5개, `historyRetention`: 최근 30회
 - `maxLogBytes`: 배포당 64 KiB + 짧은 잘림 표시
-- `sessionHours`: 8시간, 프로젝트 `timeoutSeconds`: CLI 기본 300초
+- `sessionHours`: 기본 8시간(480분), 로그인 시점부터 고정 만료. 쿠키 이름은 `hoist.session`. 프로젝트 `timeoutSeconds`: CLI 기본 300초
 - 관리자 계정 1개, 프로젝트 최대 32개, 한 번에 배포 1개, 업로드 1개, 로그인 해시 검증 1개
 
 `maxArtifactBytes`는 최대 64 GiB, `maxStorageBytes`는 최대 1 TiB까지 설정할 수 있습니다. `config list`로 값을 확인하고 `config set KEY VALUE`로 변경합니다. `publicOrigin`은 HTTPS origin 또는 문자열 `null`을 받습니다.

@@ -4,7 +4,6 @@ import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Card, CardHeader, CardTitle, CardContent } from "./ui/card";
-import { Alert, AlertDescription } from "./ui/alert";
 
 export function Login({ app }: { app: Console }) {
   const [username, setUsername] = useState("");
@@ -53,9 +52,9 @@ export function Login({ app }: { app: Console }) {
               />
             </div>
             {app.state.loginError && (
-              <Alert variant="destructive">
-                <AlertDescription>{app.state.loginError}</AlertDescription>
-              </Alert>
+              <p role="alert" className="text-xs text-destructive">
+                {app.state.loginError}
+              </p>
             )}
             <Button
               id="login-button"

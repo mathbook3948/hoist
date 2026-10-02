@@ -207,7 +207,7 @@ test("CLI setup, authentication, upload boundaries, deployment argv, locks, boun
     expect(login.status).toBe(200);
     cookie = login.headers.get("set-cookie")!.split(";")[0];
     csrf = (await login.json()).csrf;
-    expect(login.headers.get("set-cookie")!.startsWith("hoist_session=")).toBe(
+    expect(login.headers.get("set-cookie")!.startsWith("hoist.session=")).toBe(
       true,
     );
     expect(login.headers.get("set-cookie")).toContain("HttpOnly");
