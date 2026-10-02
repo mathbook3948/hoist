@@ -222,7 +222,7 @@ bun run server --data-dir /absolute/data
 
 ## 웹 UI
 
-웹 UI는 shadcn/ui와 Tailwind CSS로 구성합니다. 컴포넌트는 `apps/web/src/components/ui`에 있으며, 추가할 때는 `cd apps/web` 후 `bun x shadcn@latest add <component>`를 실행합니다. `src/style.css`에는 테마 변수와 기본 스타일만 두고, 화면 스타일은 Tailwind 유틸리티로 작성합니다.
+웹 UI는 shadcn/ui와 Tailwind CSS로 구성합니다. 컴포넌트는 `apps/web/src/components/ui`에 있으며, 추가할 때는 `cd apps/web` 후 `bun x shadcn@latest add <component>`를 실행합니다. 공식 컴포넌트 코드는 유지하고 화면별 변형은 사용처의 props와 Tailwind 클래스로 설정합니다. 폼은 Field, 툴팁은 Tooltip, 빈 상태는 Empty, 로딩은 Spinner/Skeleton, 스크롤 영역은 ScrollArea를 사용합니다. 파일 드롭 이벤트와 로그 따라가기 등 앱 동작은 화면에서 처리합니다. `src/style.css`에는 테마 변수와 기본 스타일, CSP에 필요한 ScrollArea 스크롤바 스타일만 두고, 화면 스타일은 Tailwind 유틸리티로 작성합니다.
 
 ## Idle 메모리 측정
 

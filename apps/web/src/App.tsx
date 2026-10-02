@@ -5,6 +5,7 @@ import { Skeleton } from "./components/ui/skeleton";
 import { useEffect } from "react";
 import { toast } from "sonner";
 import { Toaster } from "./components/ui/sonner";
+import { TooltipProvider } from "./components/ui/tooltip";
 export function App() {
   const app = useConsole();
   useEffect(() => {
@@ -29,9 +30,9 @@ export function App() {
       </main>
     );
   return (
-    <>
+    <TooltipProvider>
       {app.state.user ? <Workspace app={app} /> : <Login app={app} />}
-      <Toaster position="bottom-right" closeButton />
-    </>
+      <Toaster theme="light" position="bottom-right" closeButton />
+    </TooltipProvider>
   );
 }

@@ -10,7 +10,9 @@ import { Plus, Settings, Trash2 } from "lucide-react";
 import { Input } from "./ui/input";
 import { Textarea } from "./ui/textarea";
 import { ScrollArea, ScrollBar } from "./ui/scroll-area";
-import { Label } from "./ui/label";
+import { Field, FieldLabel, FieldDescription, FieldError } from "./ui/field";
+import { Tooltip, TooltipTrigger, TooltipContent } from "./ui/tooltip";
+import { Spinner } from "./ui/spinner";
 import { Alert, AlertDescription } from "./ui/alert";
 import {
   Dialog,
@@ -132,49 +134,61 @@ export function ProjectManagement({ app }: { app: Console }) {
     >
       <div className="flex flex-wrap gap-2">
         {!app.state.projectId && (
-          <Button
-            ref={addButton}
-            id="project-add-button"
-            variant="secondary"
-            size="icon"
-            aria-label="등록"
-            title="프로젝트 등록"
-            disabled={app.managementBusy}
-            onClick={() => open()}
-          >
-            <Plus aria-hidden="true" />
-          </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                ref={addButton}
+                id="project-add-button"
+                variant="secondary"
+                size="icon"
+                aria-label="등록"
+                disabled={app.managementBusy}
+                onClick={() => open()}
+              >
+                <Plus aria-hidden="true" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>프로젝트 등록</TooltipContent>
+          </Tooltip>
         )}
         {app.project && (
           <>
-            <Button
-              ref={editButton}
-              id="project-edit-button"
-              variant="secondary"
-              size="icon"
-              aria-label="설정"
-              title="프로젝트 설정"
-              disabled={app.managementBusy || !app.project}
-              onClick={() => open(app.project)}
-            >
-              <Settings aria-hidden="true" />
-            </Button>
-            <Button
-              ref={removeButton}
-              id="project-remove-button"
-              variant="destructive"
-              size="icon"
-              aria-label="프로젝트 삭제"
-              title="프로젝트 삭제"
-              disabled={app.managementBusy || !app.project}
-              onClick={() => {
-                app.update({ notice: "" });
-                setEditor(null);
-                setRemoving(app.project || null);
-              }}
-            >
-              <Trash2 aria-hidden="true" />
-            </Button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  ref={editButton}
+                  id="project-edit-button"
+                  variant="secondary"
+                  size="icon"
+                  aria-label="설정"
+                  disabled={app.managementBusy || !app.project}
+                  onClick={() => open(app.project)}
+                >
+                  <Settings aria-hidden="true" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>프로젝트 설정</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  ref={removeButton}
+                  id="project-remove-button"
+                  variant="destructive"
+                  size="icon"
+                  aria-label="프로젝트 삭제"
+                  disabled={app.managementBusy || !app.project}
+                  onClick={() => {
+                    app.update({ notice: "" });
+                    setEditor(null);
+                    setRemoving(app.project || null);
+                  }}
+                >
+                  <Trash2 aria-hidden="true" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>프로젝트 삭제</TooltipContent>
+            </Tooltip>
           </>
         )}
       </div>
@@ -186,7 +200,7 @@ export function ProjectManagement({ app }: { app: Console }) {
       >
         <DialogContent
           showCloseButton={false}
-          className="max-h-[90svh] overflow-y-auto sm:max-w-3xl"
+          className="gap-0 overflow-hidden p-0 sm:max-w-3xl"
           onOpenAutoFocus={(e) => {
             e.preventDefault();
             nameInput.current?.focus();
@@ -196,110 +210,120 @@ export function ProjectManagement({ app }: { app: Console }) {
             editorTrigger.current?.focus();
           }}
         >
-          <DialogHeader>
-            <DialogTitle>
-              {editor?.editingId ? "프로젝트 설정" : "프로젝트 등록"}
-            </DialogTitle>
-            <DialogDescription>
-              배포 스크립트와 실행 제한 시간을 설정합니다.
-            </DialogDescription>
-          </DialogHeader>
-          {editor && (
-            <form
-              id="project-form"
-              className="min-w-0 space-y-4"
-              onSubmit={save}
-            >
-              <div className="space-y-2">
-                <Label htmlFor="project-name-input">프로젝트 이름</Label>
-                <Input
-                  ref={nameInput}
-                  id="project-name-input"
-                  required
-                  maxLength={100}
-                  autoComplete="off"
-                  value={editor.input.name}
-                  disabled={app.managementBusy}
-                  onChange={(e) => field("name", e.target.value)}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="project-script-input">배포 스크립트</Label>
-                <ScrollArea
-                  type="auto"
-                  className="h-72 overflow-hidden rounded-md border border-input focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/50"
+          <ScrollArea
+            type="auto"
+            className="min-w-0 [&>[data-slot=scroll-area-viewport]]:max-h-[90svh] [&>[data-slot=scroll-area-viewport]>div]:block!"
+          >
+            <div className="min-w-0 space-y-4 p-6">
+              <DialogHeader>
+                <DialogTitle>
+                  {editor?.editingId ? "프로젝트 설정" : "프로젝트 등록"}
+                </DialogTitle>
+                <DialogDescription>
+                  배포 스크립트와 실행 제한 시간을 설정합니다.
+                </DialogDescription>
+              </DialogHeader>
+              {editor && (
+                <form
+                  id="project-form"
+                  className="min-w-0 space-y-4"
+                  onSubmit={save}
                 >
-                  <Textarea
-                    id="project-script-input"
-                    required
-                    autoComplete="off"
-                    autoCapitalize="none"
-                    spellCheck={false}
-                    wrap="off"
-                    className="min-h-[calc(var(--spacing)*72-2px)] w-max min-w-full resize-none overflow-hidden field-sizing-content rounded-none border-0 font-mono text-sm leading-relaxed shadow-none focus-visible:ring-0"
-                    value={editor.input.scriptContent}
-                    disabled={
-                      app.managementBusy ||
-                      editor.loading ||
-                      Boolean(editor.loadError)
-                    }
-                    onChange={(e) => field("scriptContent", e.target.value)}
-                  />
-                  <ScrollBar orientation="horizontal" />
-                </ScrollArea>
-                <p className="text-xs text-muted-foreground">
-                  {editor.loading
-                    ? "스크립트를 불러오는 중…"
-                    : "sh · $1: 업로드 파일 경로 · $2: 버전"}
-                </p>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="project-timeout-input">
-                  배포 실행 제한 시간 (초)
-                </Label>
-                <Input
-                  id="project-timeout-input"
-                  type="number"
-                  required
-                  min={1}
-                  max={3600}
-                  step={1}
-                  value={editor.input.timeoutSeconds}
-                  disabled={app.managementBusy}
-                  onChange={(e) =>
-                    field("timeoutSeconds", Number(e.target.value))
-                  }
-                />
-              </div>
-              {editor.loadError && (
-                <Alert variant="destructive">
-                  <AlertDescription>{editor.loadError}</AlertDescription>
-                </Alert>
+                  <Field>
+                    <FieldLabel htmlFor="project-name-input">
+                      프로젝트 이름
+                    </FieldLabel>
+                    <Input
+                      ref={nameInput}
+                      id="project-name-input"
+                      required
+                      maxLength={100}
+                      autoComplete="off"
+                      value={editor.input.name}
+                      disabled={app.managementBusy}
+                      onChange={(e) => field("name", e.target.value)}
+                    />
+                  </Field>
+                  <Field>
+                    <FieldLabel htmlFor="project-script-input">
+                      배포 스크립트
+                    </FieldLabel>
+                    <ScrollArea
+                      type="auto"
+                      className="h-72 overflow-hidden rounded-md border border-input focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/50"
+                    >
+                      <Textarea
+                        id="project-script-input"
+                        required
+                        autoComplete="off"
+                        autoCapitalize="none"
+                        spellCheck={false}
+                        wrap="off"
+                        className="min-h-[calc(var(--spacing)*72-2px)] w-max min-w-full resize-none overflow-hidden field-sizing-content rounded-none border-0 font-mono text-sm leading-relaxed shadow-none focus-visible:ring-0"
+                        value={editor.input.scriptContent}
+                        disabled={
+                          app.managementBusy ||
+                          editor.loading ||
+                          Boolean(editor.loadError)
+                        }
+                        onChange={(e) => field("scriptContent", e.target.value)}
+                      />
+                      <ScrollBar orientation="horizontal" />
+                    </ScrollArea>
+                    <FieldDescription className="flex items-center gap-2 text-xs">
+                      {editor.loading && <Spinner />}
+                      {editor.loading
+                        ? "스크립트를 불러오는 중…"
+                        : "sh · $1: 업로드 파일 경로 · $2: 버전"}
+                    </FieldDescription>
+                    {editor.loadError && (
+                      <FieldError>{editor.loadError}</FieldError>
+                    )}
+                  </Field>
+                  <Field>
+                    <FieldLabel htmlFor="project-timeout-input">
+                      배포 실행 제한 시간 (초)
+                    </FieldLabel>
+                    <Input
+                      id="project-timeout-input"
+                      type="number"
+                      required
+                      min={1}
+                      max={3600}
+                      step={1}
+                      value={editor.input.timeoutSeconds}
+                      disabled={app.managementBusy}
+                      onChange={(e) =>
+                        field("timeoutSeconds", Number(e.target.value))
+                      }
+                    />
+                  </Field>
+                  {error}
+                  <DialogFooter>
+                    <Button
+                      variant="secondary"
+                      type="button"
+                      disabled={Boolean(app.state.busy)}
+                      onClick={() => setEditor(null)}
+                    >
+                      닫기
+                    </Button>
+                    <Button
+                      id="project-save-button"
+                      type="submit"
+                      disabled={
+                        app.managementBusy ||
+                        editor.loading ||
+                        Boolean(editor.loadError)
+                      }
+                    >
+                      저장
+                    </Button>
+                  </DialogFooter>
+                </form>
               )}
-              {error}
-              <DialogFooter>
-                <Button
-                  variant="secondary"
-                  type="button"
-                  disabled={Boolean(app.state.busy)}
-                  onClick={() => setEditor(null)}
-                >
-                  닫기
-                </Button>
-                <Button
-                  id="project-save-button"
-                  type="submit"
-                  disabled={
-                    app.managementBusy ||
-                    editor.loading ||
-                    Boolean(editor.loadError)
-                  }
-                >
-                  저장
-                </Button>
-              </DialogFooter>
-            </form>
-          )}
+            </div>
+          </ScrollArea>
         </DialogContent>
       </Dialog>
       <AlertDialog
@@ -323,7 +347,10 @@ export function ProjectManagement({ app }: { app: Console }) {
           </AlertDialogHeader>
           {error}
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={Boolean(app.state.busy)}>
+            <AlertDialogCancel
+              variant="secondary"
+              disabled={Boolean(app.state.busy)}
+            >
               취소
             </AlertDialogCancel>
             <Button

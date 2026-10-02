@@ -8,6 +8,7 @@ import {
   TableHeader,
   TableRow,
 } from "./ui/table";
+import { Empty, EmptyHeader, EmptyDescription } from "./ui/empty";
 
 export type Column<T> = {
   id: string;
@@ -89,11 +90,12 @@ export function DataTable<T>({
             ))
           ) : (
             <TableRow>
-              <TableCell
-                colSpan={columns.length}
-                className="h-28 text-center text-muted-foreground"
-              >
-                {emptyMessage}
+              <TableCell colSpan={columns.length} className="p-0">
+                <Empty>
+                  <EmptyHeader>
+                    <EmptyDescription>{emptyMessage}</EmptyDescription>
+                  </EmptyHeader>
+                </Empty>
               </TableCell>
             </TableRow>
           )}

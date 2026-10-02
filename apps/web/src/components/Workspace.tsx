@@ -4,7 +4,9 @@ import { ProjectManagement } from "./ProjectManagement";
 import { DeployForm } from "./DeployForm";
 import { Logs } from "./Logs";
 import { Button } from "./ui/button";
-import { Card, CardContent } from "./ui/card";
+import { Empty, EmptyHeader, EmptyDescription } from "./ui/empty";
+import { Spinner } from "./ui/spinner";
+import { Tooltip, TooltipTrigger, TooltipContent } from "./ui/tooltip";
 
 import { StatusBadge } from "./StatusBadge";
 import { ArrowLeft, LogOut } from "lucide-react";
@@ -20,27 +22,31 @@ export function Workspace({ app }: { app: Console }) {
         <header className="flex flex-wrap items-center justify-between gap-4">
           <div className="flex min-w-0 items-center gap-2">
             {state.projectId && (
-              <Button asChild variant="secondary" size="icon">
-                <a
-                  href="/"
-                  aria-label="프로젝트 목록"
-                  title="목록으로"
-                  onClick={(e) => {
-                    if (
-                      e.button === 0 &&
-                      !e.ctrlKey &&
-                      !e.metaKey &&
-                      !e.shiftKey &&
-                      !e.altKey
-                    ) {
-                      e.preventDefault();
-                      app.selectProject(null);
-                    }
-                  }}
-                >
-                  <ArrowLeft aria-hidden="true" />
-                </a>
-              </Button>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button asChild variant="secondary" size="icon">
+                    <a
+                      href="/"
+                      aria-label="프로젝트 목록"
+                      onClick={(e) => {
+                        if (
+                          e.button === 0 &&
+                          !e.ctrlKey &&
+                          !e.metaKey &&
+                          !e.shiftKey &&
+                          !e.altKey
+                        ) {
+                          e.preventDefault();
+                          app.selectProject(null);
+                        }
+                      }}
+                    >
+                      <ArrowLeft aria-hidden="true" />
+                    </a>
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>목록으로</TooltipContent>
+              </Tooltip>
             )}
             <h1 className="h-9 truncate text-2xl leading-9 font-semibold tracking-tight">
               {project?.name ||
@@ -60,20 +66,28 @@ export function Workspace({ app }: { app: Console }) {
               />
             )}
             {project && <DeployForm key={project.id} app={app} />}
-            <Button
-              variant="secondary"
-              size="icon"
-              aria-label="로그아웃"
-              title={`${state.user} · 로그아웃`}
-              disabled={Boolean(state.busy)}
-              onClick={() => void app.logout()}
-            >
-              <LogOut aria-hidden="true" />
-            </Button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="secondary"
+                  size="icon"
+                  aria-label="로그아웃"
+                  disabled={Boolean(state.busy)}
+                  onClick={() => void app.logout()}
+                >
+                  <LogOut aria-hidden="true" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{state.user} · 로그아웃</TooltipContent>
+            </Tooltip>
           </div>
         </header>
         {state.loadingProjects ? (
-          <p className="text-sm text-muted-foreground">
+          <p
+            role="status"
+            className="flex items-center gap-2 text-sm text-muted-foreground"
+          >
+            <Spinner />
             프로젝트를 불러오는 중…
           </p>
         ) : !state.projectId ? (
@@ -94,25 +108,29 @@ export function Workspace({ app }: { app: Console }) {
                 header: "이름",
                 className: "w-60",
                 cell: (p) => (
-                  <a
-                    href={`/${encodeURIComponent(p.id)}`}
-                    title={p.name}
-                    className="inline-block max-w-full truncate rounded-sm font-medium underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-ring"
-                    onClick={(e) => {
-                      if (
-                        e.button === 0 &&
-                        !e.ctrlKey &&
-                        !e.metaKey &&
-                        !e.shiftKey &&
-                        !e.altKey
-                      ) {
-                        e.preventDefault();
-                        app.selectProject(p.id);
-                      }
-                    }}
-                  >
-                    {p.name}
-                  </a>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <a
+                        href={`/${encodeURIComponent(p.id)}`}
+                        className="inline-block max-w-full truncate rounded-sm font-medium underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-ring"
+                        onClick={(e) => {
+                          if (
+                            e.button === 0 &&
+                            !e.ctrlKey &&
+                            !e.metaKey &&
+                            !e.shiftKey &&
+                            !e.altKey
+                          ) {
+                            e.preventDefault();
+                            app.selectProject(p.id);
+                          }
+                        }}
+                      >
+                        {p.name}
+                      </a>
+                    </TooltipTrigger>
+                    <TooltipContent>{p.name}</TooltipContent>
+                  </Tooltip>
                 ),
               },
               {
@@ -155,11 +173,13 @@ export function Workspace({ app }: { app: Console }) {
             ]}
           />
         ) : !project ? (
-          <Card>
-            <CardContent className="py-10 text-center text-sm text-muted-foreground">
-              존재하지 않거나 삭제된 프로젝트입니다.
-            </CardContent>
-          </Card>
+          <Empty className="border">
+            <EmptyHeader>
+              <EmptyDescription>
+                존재하지 않거나 삭제된 프로젝트입니다.
+              </EmptyDescription>
+            </EmptyHeader>
+          </Empty>
         ) : (
           <>
             <DataTable

@@ -2,7 +2,7 @@ import { useState, type FormEvent } from "react";
 import type { Console } from "../console";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
-import { Label } from "./ui/label";
+import { Field, FieldGroup, FieldLabel, FieldError } from "./ui/field";
 import { Card, CardHeader, CardTitle, CardContent } from "./ui/card";
 
 export function Login({ app }: { app: Console }) {
@@ -26,35 +26,37 @@ export function Login({ app }: { app: Console }) {
         </CardHeader>
         <CardContent>
           <form id="login-form" className="space-y-5" onSubmit={submit}>
-            <div className="space-y-2">
-              <Label htmlFor="username">사용자 이름</Label>
-              <Input
-                id="username"
-                name="username"
-                autoComplete="username"
-                autoCapitalize="none"
-                required
-                maxLength={64}
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="password">비밀번호</Label>
-              <Input
-                id="password"
-                name="password"
-                type="password"
-                autoComplete="current-password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-              />
-            </div>
+            <FieldGroup className="gap-5">
+              <Field>
+                <FieldLabel htmlFor="username">사용자 이름</FieldLabel>
+                <Input
+                  id="username"
+                  name="username"
+                  autoComplete="username"
+                  autoCapitalize="none"
+                  required
+                  maxLength={64}
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                />
+              </Field>
+              <Field>
+                <FieldLabel htmlFor="password">비밀번호</FieldLabel>
+                <Input
+                  id="password"
+                  name="password"
+                  type="password"
+                  autoComplete="current-password"
+                  required
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                />
+              </Field>
+            </FieldGroup>
             {app.state.loginError && (
-              <p role="alert" className="text-xs text-destructive">
+              <FieldError className="text-xs">
                 {app.state.loginError}
-              </p>
+              </FieldError>
             )}
             <Button
               id="login-button"
