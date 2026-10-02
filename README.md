@@ -153,6 +153,14 @@ bun run server --data-dir /absolute/data
 # 서버로 웹 화면을 제공하려면 먼저 bun run build:web 실행
 ```
 
+## 웹 UI
+
+웹 UI는 shadcn/ui와 Tailwind CSS로 구성합니다. 컴포넌트는 `apps/web/src/components/ui`에 있으며, 추가할 때는 `cd apps/web` 후 `bun x shadcn@latest add <component>`를 실행합니다. `src/style.css`에는 테마 변수와 기본 스타일만 두고, 화면 스타일은 Tailwind 유틸리티로 작성합니다.
+
+## Idle 메모리 측정
+
+`bun run build` 후 `bun run measure:idle`을 실행하면 컴파일된 서버만 별도 임시 데이터 폴더에서 측정합니다. 준비 확인 후 idle과 웹 파일·로그인·프로젝트 조회 후 idle을 각각 10초 안정화하고 30초간 1초 간격으로 측정합니다. 측정 구간에는 HTTP 요청을 보내지 않습니다. Windows는 working set과 private bytes, Linux는 RSS를 기록합니다. 브라우저·측정기·계정 생성 비용은 제외하며 업로드나 배포는 실행하지 않습니다. 결과와 원시 표본, 커밋 및 바이너리 해시는 `dist/measurements/idle.json`에 저장합니다. OS별 지표는 직접 동일시하지 마세요.
+
 ## DB 마이그레이션
 
 서버 시작 또는 CLI 명령 실행 시 `Store`가 DB를 열면서 `apps/server/src/migrations/index.ts`의 미적용 마이그레이션을 자동 적용합니다. 별도 수동 migrate 명령은 필요하지 않습니다. `hoist init --data-dir DIR`로 서버를 띄우기 전에 적용할 수도 있습니다.

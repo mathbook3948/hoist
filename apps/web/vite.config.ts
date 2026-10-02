@@ -1,11 +1,14 @@
 import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
+import tailwindcss from "@tailwindcss/vite";
+import { fileURLToPath } from "node:url";
 
 const apiOrigin = process.env.HOIST_API_ORIGIN || "http://127.0.0.1:3000";
 const webOrigin = "http://127.0.0.1:5173";
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), tailwindcss()],
+  resolve: { alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) } },
   publicDir: false,
   server: {
     host: "127.0.0.1",

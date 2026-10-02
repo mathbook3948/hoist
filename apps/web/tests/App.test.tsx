@@ -156,7 +156,7 @@ describe("React deployment console", () => {
     await screen.findByLabelText("비밀번호");
     await user.type(screen.getByLabelText("사용자 이름"), "admin");
     await user.type(screen.getByLabelText("비밀번호"), "synthetic-password");
-    await user.click(screen.getByRole("button", { name: "로그인 →" }));
+    await user.click(screen.getByRole("button", { name: "로그인" }));
     expect(await screen.findByRole("status")).toHaveTextContent(
       "Projects unavailable",
     );
@@ -166,7 +166,7 @@ describe("React deployment console", () => {
   });
   test("unauthenticated boot shows login and does not request project data", async () => {
     const { fetcher } = fixture(false);
-    await screen.findByRole("heading", { name: "Hoist 로그인" });
+    await screen.findByRole("heading", { name: "로그인" });
     expect(callsTo(fetcher, "/api/projects")).toHaveLength(0);
   });
   test("login prevents duplicate submissions and opens the workspace", async () => {
@@ -182,7 +182,7 @@ describe("React deployment console", () => {
             return json({ ok: true });
           })
         : undefined;
-    await screen.findByRole("heading", { name: "Hoist 로그인" });
+    await screen.findByRole("heading", { name: "로그인" });
     await user.type(screen.getByLabelText("사용자 이름"), "admin");
     await user.type(screen.getByLabelText("비밀번호"), "synthetic-password");
     const form = document.getElementById("login-form")!;
@@ -200,7 +200,7 @@ describe("React deployment console", () => {
     await screen.findByLabelText("비밀번호");
     await user.type(screen.getByLabelText("사용자 이름"), "admin");
     await user.type(screen.getByLabelText("비밀번호"), "wrong-password");
-    await user.click(screen.getByRole("button", { name: "로그인 →" }));
+    await user.click(screen.getByRole("button", { name: "로그인" }));
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "사용자 이름 또는 비밀번호",
     );
@@ -350,7 +350,7 @@ describe("React deployment console", () => {
   test("an empty workspace supports project registration and editing", async () => {
     const { fetcher, user } = fixture(true, []);
     await screen.findByText("아직 프로젝트가 없습니다");
-    await user.click(screen.getByRole("button", { name: "+ 등록" }));
+    await user.click(screen.getByRole("button", { name: "등록" }));
     await user.type(screen.getByLabelText("프로젝트 ID"), "new");
     await user.type(screen.getByLabelText("프로젝트 이름"), "New project");
     await user.type(
@@ -386,7 +386,7 @@ describe("React deployment console", () => {
     ).toBe(false);
     await user.click(
       within(
-        screen.getByRole("region", { name: "프로젝트 등록 해제 확인" }),
+        screen.getByRole("alertdialog", { name: "프로젝트 등록 해제 확인" }),
       ).getByRole("button", { name: "등록 해제" }),
     );
     await screen.findByRole("heading", { name: "Second", level: 1 });
@@ -400,27 +400,53 @@ describe("React deployment console", () => {
         ? json({ error: "Script missing" }, 400)
         : undefined;
     await user.click(screen.getByRole("button", { name: "저장" }));
-    expect(await screen.findByText("Script missing")).toBeInTheDocument();
+    expect(
+      await within(screen.getByRole("dialog")).findByText("Script missing"),
+    ).toBeInTheDocument();
     expect(screen.getByLabelText("프로젝트 이름")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "닫기" }));
     data.managementBusy = true;
     await user.click(screen.getByRole("button", { name: /새로고침/ }));
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: "+ 등록" })).toBeDisabled(),
+      expect(screen.getByRole("button", { name: "등록" })).toBeDisabled(),
     );
+  });
+  test("dialogs support keyboard dismissal, restore focus and cancel without deleting", async () => {
+    const { user, fetcher } = fixture();
+    await ready();
+    const settings = screen.getByRole("button", { name: "설정", exact: true });
+    await user.click(settings);
+    expect(screen.getByLabelText("프로젝트 이름")).toHaveFocus();
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(settings).toHaveFocus();
+    const remove = screen.getByRole("button", {
+      name: "등록 해제",
+      exact: true,
+    });
+    await user.click(remove);
+    const cancel = screen.getByRole("button", { name: "취소" });
+    expect(cancel).toHaveFocus();
+    await user.click(cancel);
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+    expect(remove).toHaveFocus();
+    expect(
+      fetcher.mock.calls.some(([, init]) => init?.method === "DELETE"),
+    ).toBe(false);
   });
   test("session expiry clears the workspace and logout uses the API", async () => {
     const { data, user } = fixture();
     await ready();
     data.authenticated = false;
     await user.click(screen.getByRole("button", { name: /새로고침/ }));
-    await screen.findByRole("heading", { name: "Hoist 로그인" });
+    await screen.findByRole("heading", { name: "로그인" });
     expect(screen.getByRole("alert")).toHaveTextContent("세션이 만료");
   });
   test("logout clears project and session state", async () => {
     const { fetcher, user } = fixture();
     await ready();
     await user.click(screen.getByRole("button", { name: "로그아웃" }));
-    await screen.findByRole("heading", { name: "Hoist 로그인" });
+    await screen.findByRole("heading", { name: "로그인" });
     expect(
       new Headers(callsTo(fetcher, "/api/logout")[0][1]!.headers).get(
         "X-CSRF-Token",

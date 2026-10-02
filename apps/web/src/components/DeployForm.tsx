@@ -1,6 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import type { Console } from "../console";
 import { byNewest, formatSize, isActive } from "../display";
+import { Button } from "./ui/button";
+import { Input } from "./ui/input";
+import { Label } from "./ui/label";
+import { Card, CardHeader, CardTitle, CardContent } from "./ui/card";
+import { Separator } from "./ui/separator";
+import { NativeSelect, NativeSelectOption } from "./ui/native-select";
+import { Upload } from "lucide-react";
 
 export function DeployForm({ app }: { app: Console }) {
   const { state, project } = app;
@@ -29,154 +36,140 @@ export function DeployForm({ app }: { app: Console }) {
     state.version.trim(),
   );
   return (
-    <section className="card deploy-card">
-      <div className="card-heading">
-        <div>
-          <span className="section-number">01</span>
-          <h2>새 배포</h2>
-        </div>
-        <span className="subtle-label">UPLOAD &amp; DEPLOY</span>
-      </div>
-      <form
-        id="upload-form"
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (!disabled && state.file && !oversized) void app.upload();
-        }}
-      >
-        <label className="input-label" htmlFor="artifact-file">
-          배포 파일 업로드
-        </label>
-        <label
-          id="drop-zone"
-          className={`drop-zone${disabled ? " disabled" : ""}${dragging ? " drag-over" : ""}`}
-          htmlFor="artifact-file"
-          onClick={(e) => {
-            if (disabled) e.preventDefault();
-          }}
-          onDragOver={(e) => {
+    <Card>
+      <CardHeader>
+        <CardTitle>새 배포</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-5">
+        <form
+          id="upload-form"
+          className="space-y-3"
+          onSubmit={(e) => {
             e.preventDefault();
-            if (!disabled) setDragging(true);
-          }}
-          onDragLeave={() => setDragging(false)}
-          onDrop={(e) => {
-            e.preventDefault();
-            setDragging(false);
-            if (disabled) return;
-            const files = e.dataTransfer.files;
-            if (files.length > 1)
-              app.update({
-                notice: "한 번에 파일 하나씩 업로드해 주세요",
-                noticeError: true,
-              });
-            else if (files[0]) {
-              app.update({ file: files[0] });
-              if (input.current) input.current.value = "";
-            }
+            if (!disabled && state.file && !oversized) void app.upload();
           }}
         >
-          <span className="upload-icon" aria-hidden="true">
-            ↑
-          </span>
-          <strong>{state.file?.name || "파일을 끌어놓거나 선택하세요"}</strong>
-          <span>
-            {state.file
-              ? formatSize(state.file.size)
-              : "프로젝트에서 실행할 빌드 결과물"}
-          </span>
-          <span className="file-picker-link">파일 선택</span>
-        </label>
-        <input
-          ref={input}
-          id="artifact-file"
-          className="visually-hidden"
-          type="file"
-          disabled={disabled}
-          onChange={(e) => app.update({ file: e.target.files?.[0] || null })}
-        />
-        <div className="upload-actions">
-          <span className="muted">
-            {oversized
-              ? `파일 크기가 최대 ${formatSize(state.limits!.maxArtifactBytes)}를 초과합니다`
-              : state.file
-                ? "선택한 파일을 서버에 업로드할 준비가 됐어요"
-                : "파일 선택 후 서버에 업로드합니다"}
-          </span>
-          <button
-            id="upload-button"
-            className="button secondary small"
-            type="submit"
-            disabled={disabled || !state.file || oversized}
+          <Label htmlFor="artifact-file">배포 파일 업로드</Label>
+          <div
+            id="drop-zone"
+            className={`rounded-lg border border-dashed p-5 transition-colors ${dragging ? "border-ring bg-accent" : "bg-muted/20"} ${disabled ? "opacity-50" : ""}`}
+            onDragOver={(e) => {
+              e.preventDefault();
+              if (!disabled) setDragging(true);
+            }}
+            onDragLeave={() => setDragging(false)}
+            onDrop={(e) => {
+              e.preventDefault();
+              setDragging(false);
+              if (disabled) return;
+              const files = e.dataTransfer.files;
+              if (files.length > 1)
+                app.update({
+                  notice: "한 번에 파일 하나씩 업로드해 주세요",
+                  noticeError: true,
+                });
+              else if (files[0]) {
+                app.update({ file: files[0] });
+                if (input.current) input.current.value = "";
+              }
+            }}
           >
-            {state.busy === "upload" ? "업로드 중…" : "업로드"}
-          </button>
-        </div>
-      </form>
-      <div className="form-divider" />
-      <p id="upload-limits" className="muted upload-limits">
-        {state.limits &&
-          `파일당 최대 ${formatSize(state.limits.maxArtifactBytes)} · 전체 보관 한도 ${formatSize(state.limits.maxStorageBytes)}`}
-      </p>
-      <form
-        id="deploy-form"
-        className="deploy-form"
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (canDeploy) void app.deploy();
-        }}
-      >
-        <div className="form-grid">
-          <div>
-            <label htmlFor="artifact-select">배포할 파일</label>
-            <select
-              id="artifact-select"
-              required
-              disabled={Boolean(state.busy || !project?.artifacts.length)}
-              value={state.artifactId}
-              onChange={(e) => app.update({ artifactId: e.target.value })}
-            >
-              {!project?.artifacts.length && (
-                <option value="">파일을 먼저 업로드하세요</option>
-              )}
-              {byNewest(project?.artifacts || [], "createdAt").map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.name} · {formatSize(a.size)}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label htmlFor="version-input">버전</label>
-            <input
-              id="version-input"
-              placeholder="예: v1.0.0"
-              maxLength={128}
-              autoComplete="off"
-              required
-              disabled={Boolean(state.busy || app.anyRunning)}
-              value={state.version}
-              onChange={(e) => app.update({ version: e.target.value })}
+            <div className="mb-3 flex items-center gap-2 text-sm text-muted-foreground">
+              <Upload className="size-4" aria-hidden="true" />
+              <span>파일을 끌어놓거나 선택하세요</span>
+            </div>
+            <Input
+              ref={input}
+              id="artifact-file"
+              type="file"
+              disabled={disabled}
+              onChange={(e) =>
+                app.update({ file: e.target.files?.[0] || null })
+              }
             />
+            {state.file && (
+              <p className="mt-2 truncate text-xs text-muted-foreground">
+                {state.file.name} · {formatSize(state.file.size)}
+              </p>
+            )}
           </div>
-        </div>
-        <div className="deploy-actions">
-          <p className="muted">
-            {running
-              ? "현재 배포가 끝나면 다음 배포를 시작할 수 있어요"
-              : app.anyRunning
-                ? "다른 프로젝트의 배포가 끝나면 시작할 수 있어요"
-                : "파일과 버전을 확인한 뒤 실행하세요"}
-          </p>
-          <button
-            id="deploy-button"
-            className="button primary"
-            type="submit"
-            disabled={!canDeploy}
-          >
-            {state.busy === "deploy" ? "배포 시작 중…" : "↗ 배포 시작"}
-          </button>
-        </div>
-      </form>
-    </section>
+          <div className="flex items-center justify-between gap-3">
+            <p
+              className={`text-xs ${oversized ? "text-destructive" : "text-muted-foreground"}`}
+            >
+              {oversized
+                ? `파일 크기가 최대 ${formatSize(state.limits!.maxArtifactBytes)}를 초과합니다`
+                : state.limits &&
+                  `파일당 최대 ${formatSize(state.limits.maxArtifactBytes)} · 전체 ${formatSize(state.limits.maxStorageBytes)}`}
+            </p>
+            <Button
+              id="upload-button"
+              variant="outline"
+              size="sm"
+              type="submit"
+              disabled={disabled || !state.file || oversized}
+            >
+              {state.busy === "upload" ? "업로드 중…" : "업로드"}
+            </Button>
+          </div>
+        </form>
+        <Separator />
+        <form
+          id="deploy-form"
+          className="space-y-4"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (canDeploy) void app.deploy();
+          }}
+        >
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="min-w-0 space-y-2 [&>[data-slot=native-select-wrapper]]:w-full">
+              <Label htmlFor="artifact-select">배포할 파일</Label>
+              <NativeSelect
+                id="artifact-select"
+                required
+                disabled={Boolean(state.busy || !project?.artifacts.length)}
+                value={state.artifactId}
+                onChange={(e) => app.update({ artifactId: e.target.value })}
+              >
+                {!project?.artifacts.length && (
+                  <NativeSelectOption value="">
+                    파일을 먼저 업로드하세요
+                  </NativeSelectOption>
+                )}
+                {byNewest(project?.artifacts || [], "createdAt").map((a) => (
+                  <NativeSelectOption key={a.id} value={a.id}>
+                    {a.name} · {formatSize(a.size)}
+                  </NativeSelectOption>
+                ))}
+              </NativeSelect>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="version-input">버전</Label>
+              <Input
+                id="version-input"
+                placeholder="v1.0.0"
+                maxLength={128}
+                autoComplete="off"
+                required
+                disabled={Boolean(state.busy || app.anyRunning)}
+                value={state.version}
+                onChange={(e) => app.update({ version: e.target.value })}
+              />
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center justify-end gap-3">
+            {app.anyRunning && (
+              <p className="text-xs text-muted-foreground">
+                진행 중인 배포가 끝나면 시작할 수 있습니다
+              </p>
+            )}
+            <Button id="deploy-button" type="submit" disabled={!canDeploy}>
+              {state.busy === "deploy" ? "배포 시작 중…" : "배포 시작"}
+            </Button>
+          </div>
+        </form>
+      </CardContent>
+    </Card>
   );
 }
