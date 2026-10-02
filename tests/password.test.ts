@@ -3,23 +3,9 @@ import { mkdtempSync, rmSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { Store } from "../apps/server/src/store";
-import { validatePassword } from "../apps/cli/src/password";
+import { createAuth } from "../apps/server/src/auth";
 
-test("password policy validates UTF-8 byte length and control characters", () => {
-  expect(validatePassword("a".repeat(12))).toBe(true);
-  expect(validatePassword("가".repeat(24))).toBe(true);
-  for (const value of [
-    "short",
-    "가".repeat(25),
-    "a".repeat(73),
-    "long-password\n",
-    "long-password\u0000",
-  ]) {
-    expect(validatePassword(value)).not.toBe(true);
-  }
-});
-
-test("piped account setup is explicit, validates passwords and releases its lock on failure", async () => {
+test("piped account setup accepts unrestricted non-empty passwords and preserves accounts on failure", async () => {
   const dir = mkdtempSync(join(tmpdir(), "hoist-password-"));
   const secret = "synthetic-pipe-password";
   async function run(args: string[], input: string) {
@@ -59,11 +45,36 @@ test("piped account setup is explicit, validates passwords and releases its lock
     const noTerminal = await run([], secret);
     expect(noTerminal.code).toBe(1);
     expect(noTerminal.stderr).toContain("requires a terminal");
-    expect((await run(["--password-stdin"], "short\n")).code).toBe(1);
+    expect((await run(["--password-stdin"], "\n")).code).toBe(1);
     const check = new Store(dir);
     expect(check.getAccount()).toEqual(original);
     check.close();
+    for (const value of [
+      "a",
+      "가".repeat(30),
+      "a".repeat(72) + "suffix",
+      "with\tcontrols\n\u0000end",
+    ]) {
+      expect((await run(["--password-stdin"], value + "\n")).code).toBe(0);
+      const updated = new Store(dir);
+      try {
+        const origin = "http://127.0.0.1";
+        const auth = createAuth(updated, updated.getConfig(), origin);
+        const request = (password: string) =>
+          new Request(origin + "/api/login", {
+            method: "POST",
+            headers: { Origin: origin, "Content-Type": "application/json" },
+            body: JSON.stringify({ username: "admin", password }),
+          });
+        expect((await auth.login(request(value), "test")).status).toBe(200);
+        await expect(
+          auth.login(request(value + "wrong"), "test"),
+        ).rejects.toThrow("Invalid credentials");
+      } finally {
+        updated.close();
+      }
+    }
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
-});
+}, 15000);

@@ -66,8 +66,7 @@ export function createAuth(store: Store, config: Config, origin: string) {
       if (
         typeof body.username !== "string" ||
         body.username.length > 64 ||
-        typeof body.password !== "string" ||
-        Buffer.byteLength(body.password, "utf8") > 72
+        typeof body.password !== "string"
       )
         fail(400, "Invalid credentials");
       const account = store.getAccount();

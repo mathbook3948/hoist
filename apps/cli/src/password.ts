@@ -1,16 +1,7 @@
-export function validatePassword(value: string): true | string {
-  return value.length >= 12 &&
-    Buffer.byteLength(value, "utf8") <= 72 &&
-    !/[\x00-\x1f\x7f]/.test(value)
-    ? true
-    : "Password must be at least 12 characters, at most 72 UTF-8 bytes, without control characters";
-}
-
 export async function readPassword(fromStdin: boolean): Promise<string> {
   if (fromStdin) {
     const value = (await Bun.stdin.text()).replace(/\r?\n$/, "");
-    const valid = validatePassword(value);
-    if (valid !== true) throw new Error(valid);
+    if (!value) throw new Error("Password is required");
     return value;
   }
   if (!process.stdin.isTTY || !process.stderr.isTTY) {
@@ -26,7 +17,7 @@ export async function readPassword(fromStdin: boolean): Promise<string> {
         message: "Password:",
         mask: "*",
         toggleMask: false,
-        validate: validatePassword,
+        validate: (value) => value.length > 0 || "Password is required",
       },
       { output: process.stderr },
     );

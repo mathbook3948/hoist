@@ -15,7 +15,7 @@ bun run build:web
 # 설정/계정/업로드/로그는 코드 밖의 지정한 설치 폴더에 저장
 bun run cli init --data-dir "$HOME/.local/share/hoist"
 
-# CLI에서 비밀번호와 확인을 숨김 입력 (12자 이상, UTF-8 72바이트 이하)
+# CLI에서 비밀번호와 확인을 숨김 입력
 bun run cli user set admin --data-dir "$HOME/.local/share/hoist"
 
 # 무해한 예제: 파일/서비스를 변경하지 않고 받은 인수만 로그에 출력
@@ -224,7 +224,7 @@ mise exec -- bun run dev
 
 각 앱만 실행하려면 `bun run dev:web` 또는 `bun run dev:server`를 사용하세요. 웹만 실행할 때 API 주소를 바꾸려면 `HOIST_API_ORIGIN`을 지정합니다 (기본 `http://127.0.0.1:3000`). 개발 프록시는 `http://127.0.0.1:5173`의 Origin만 API Origin으로 바꾸고 다른 Origin은 그대로 전달해 서버가 거부하도록 합니다.
 
-최초 로그인에 필요한 관리자 계정은 서버를 멈춘 뒤 만드세요. PowerShell에서는 아래 명령으로 비밀번호를 입력할 수 있습니다 (12자 이상, UTF-8 기준 72바이트 이하).
+최초 로그인에 필요한 관리자 계정은 서버를 멈춘 뒤 만드세요. PowerShell에서는 아래 명령으로 비밀번호를 입력할 수 있습니다. 빈 값 외에는 별도 길이·문자 조합 조건이 없습니다.
 
 ```powershell
 bun run cli user set admin
