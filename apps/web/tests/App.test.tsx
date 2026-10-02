@@ -150,6 +150,31 @@ const callsTo = (
 ) => fetcher.mock.calls.filter(([path]) => String(path).endsWith(suffix));
 
 describe("React deployment console", () => {
+  test("history leads the detail view and exposes deployment metadata", async () => {
+    const project = demo();
+    project.deployments = [
+      {
+        ...deployment,
+        status: "succeeded",
+        finishedAt: "2026-01-01T00:01:05Z",
+        exitCode: 0,
+      },
+    ];
+    const { data } = fixture(true, [project]);
+    data.intercept = (path) =>
+      path.includes("/deployments/")
+        ? json({ deployment: project.deployments[0], log: "done" })
+        : undefined;
+    await ready();
+    const history = screen.getByRole("group", { name: "배포 이력" });
+    expect(history).toHaveTextContent("release.tar");
+    expect(history).toHaveTextContent("1분 5초");
+    expect(
+      history.compareDocumentPosition(screen.getByLabelText("배포 실행 로그")) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(screen.queryByLabelText("배포 파일 업로드")).toBeNull();
+  });
   test("a project request failure after login is visible", async () => {
     const { data, user } = fixture(false);
     data.intercept = (path) =>
@@ -160,7 +185,7 @@ describe("React deployment console", () => {
     await user.type(screen.getByLabelText("사용자 이름"), "admin");
     await user.type(screen.getByLabelText("비밀번호"), "synthetic-password");
     await user.click(screen.getByRole("button", { name: "로그인" }));
-    expect(await screen.findByRole("status")).toHaveTextContent(
+    expect(await screen.findByText("Projects unavailable")).toHaveTextContent(
       "Projects unavailable",
     );
   });
@@ -209,6 +234,7 @@ describe("React deployment console", () => {
   test("upload sends raw file bytes, encoded filename and CSRF, then selects the result", async () => {
     const { fetcher, user } = fixture();
     await ready();
+    await user.click(screen.getByRole("button", { name: "새 배포" }));
     const file = new File(["archive"], "배포 파일.tar");
     await user.upload(
       document.getElementById("artifact-file") as HTMLInputElement,
@@ -232,6 +258,7 @@ describe("React deployment console", () => {
   test("file cancellation, multiple drops and oversized uploads are handled", async () => {
     fixture();
     await ready();
+    fireEvent.click(screen.getByRole("button", { name: "새 배포" }));
     const fileInput = document.getElementById("artifact-file")!;
     fireEvent.change(fileInput, {
       target: { files: [new File(["small"], "one.tar")] },
@@ -243,7 +270,11 @@ describe("React deployment console", () => {
     fireEvent.drop(document.getElementById("drop-zone")!, {
       dataTransfer: { files: [new File([], "one"), new File([], "two")] },
     });
-    expect(screen.getByRole("status")).toHaveTextContent("파일 하나씩");
+    expect(
+      await screen.findByText("한 번에 파일 하나씩 업로드해 주세요", {
+        selector: "[data-title]",
+      }),
+    ).toBeInTheDocument();
     const huge = new File([], "huge.tar");
     Object.defineProperty(huge, "size", { value: 2 * 1024 ** 3 });
     fireEvent.change(fileInput, { target: { files: [huge] } });
@@ -255,6 +286,7 @@ describe("React deployment console", () => {
   test("deploy sends selected artifact and version and renders logs as text", async () => {
     const { fetcher, user } = fixture();
     await ready();
+    await user.click(screen.getByRole("button", { name: "새 배포" }));
     await user.type(screen.getByLabelText("버전"), "v2");
     await user.click(screen.getByRole("button", { name: /배포 시작/ }));
     await waitFor(() =>
@@ -268,6 +300,31 @@ describe("React deployment console", () => {
     expect(JSON.parse(String(callsTo(fetcher, "/deploy")[0][1]!.body))).toEqual(
       { artifactId: "a1", version: "v2" },
     );
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+  test("deployment input lives in a dismissible modal and a failed request preserves the draft", async () => {
+    const { data, user } = fixture();
+    await ready();
+    expect(screen.queryByLabelText("버전")).toBeNull();
+    const trigger = screen.getByRole("button", { name: "새 배포" });
+    await user.click(trigger);
+    await user.type(screen.getByLabelText("버전"), "v-draft");
+    data.intercept = (path) =>
+      path.endsWith("/deploy")
+        ? json({ error: "Deployment unavailable" }, 409)
+        : undefined;
+    await user.click(screen.getByRole("button", { name: "배포 시작" }));
+    expect(
+      await within(screen.getByRole("dialog")).findByText(
+        "Deployment unavailable",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText("버전")).toHaveValue("v-draft");
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(trigger).toHaveFocus();
+    await user.click(trigger);
+    expect(screen.getByLabelText("버전")).toHaveValue("v-draft");
   });
   test("running logs pause when hidden, resume, then stop at a terminal state", async () => {
     const project = demo();
@@ -360,6 +417,11 @@ describe("React deployment console", () => {
     );
     await user.click(screen.getByRole("button", { name: "저장" }));
     await screen.findByRole("heading", { name: "New project", level: 1 });
+    expect(
+      await screen.findByText("프로젝트를 등록했어요", {
+        selector: "[data-title]",
+      }),
+    ).toBeInTheDocument();
     const created = fetcher.mock.calls.find(
       ([path, init]) => path === "/api/projects" && init?.method === "POST",
     )!;

@@ -1,15 +1,14 @@
 import type { Console } from "../console";
-import { byNewest, formatDate } from "../display";
+import { byNewest, formatDate, formatDuration } from "../display";
 import { ProjectManagement } from "./ProjectManagement";
 import { DeployForm } from "./DeployForm";
 import { Logs } from "./Logs";
 import { Button } from "./ui/button";
 import { Card, CardHeader, CardTitle, CardContent } from "./ui/card";
-import { Alert, AlertDescription } from "./ui/alert";
 import { Badge } from "./ui/badge";
 import { Separator } from "./ui/separator";
 import { StatusBadge } from "./StatusBadge";
-import { LogOut, X } from "lucide-react";
+import { LogOut } from "lucide-react";
 
 export function Workspace({ app }: { app: Console }) {
   const { state, project } = app;
@@ -55,29 +54,23 @@ export function Workspace({ app }: { app: Console }) {
         </div>
       </aside>
       <main className="mx-auto w-full max-w-7xl min-w-0 space-y-6 p-4 md:p-8">
-        {state.notice && (
-          <Alert
-            variant={state.noticeError ? "destructive" : "default"}
-            role="status"
-            aria-live="polite"
-            className="flex items-center justify-between"
-          >
-            <AlertDescription>{state.notice}</AlertDescription>
-            <Button
-              size="icon"
-              variant="ghost"
-              aria-label="알림 닫기"
-              onClick={() => app.update({ notice: "" })}
-            >
-              <X />
-            </Button>
-          </Alert>
-        )}
-        <div className="flex items-center justify-between gap-4">
-          <h1 className="min-w-0 truncate text-2xl font-semibold tracking-tight">
-            {project?.name || "프로젝트"}
-          </h1>
-        </div>
+        <header className="flex flex-wrap items-center justify-between gap-4">
+          <div className="min-w-0 space-y-2">
+            <h1 className="truncate text-2xl font-semibold tracking-tight">
+              {project?.name || "프로젝트"}
+            </h1>
+            {project && (
+              <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+                <StatusBadge
+                  status={project.running ? "running" : latest?.status}
+                />
+                <span>최근 배포 {latest?.version || "없음"}</span>
+                <span>· 실행 제한 {project.timeoutSeconds}초</span>
+              </div>
+            )}
+          </div>
+          {project && <DeployForm key={project.id} app={app} />}
+        </header>
         <ProjectManagement app={app} />
         {!project ? (
           <Card>
@@ -87,97 +80,66 @@ export function Workspace({ app }: { app: Console }) {
           </Card>
         ) : (
           <>
-            <section
-              className="grid gap-4 sm:grid-cols-3"
-              aria-label="프로젝트 요약"
-            >
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-sm text-muted-foreground">
-                    배포 상태
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <StatusBadge
-                    status={project.running ? "running" : latest?.status}
-                  />
-                </CardContent>
-              </Card>
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-sm text-muted-foreground">
-                    업로드된 파일
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="text-xl font-semibold">
-                  {project.artifacts.length}
-                  <span className="ml-1 text-sm font-normal text-muted-foreground">
-                    개
-                  </span>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-sm text-muted-foreground">
-                    최근 배포
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="truncate font-medium">
-                    {latest?.version || "아직 없음"}
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between">
+                <CardTitle>배포 이력</CardTitle>
+                <Badge variant="secondary">{deployments.length}</Badge>
+              </CardHeader>
+              <CardContent>
+                {!deployments.length ? (
+                  <p className="py-10 text-center text-sm text-muted-foreground">
+                    배포 이력이 없습니다. 새 배포에서 파일과 버전을 선택하세요.
                   </p>
-                  {latest && (
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      {formatDate(latest.startedAt)}
-                    </p>
-                  )}
-                </CardContent>
-              </Card>
-            </section>
-            <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_300px]">
-              <div className="min-w-0 space-y-6">
-                <DeployForm app={app} />
-                <Logs app={app} />
-              </div>
-              <Card>
-                <CardHeader className="flex flex-row items-center justify-between">
-                  <CardTitle>배포 이력</CardTitle>
-                  <Badge variant="secondary">{deployments.length}</Badge>
-                </CardHeader>
-                <CardContent className="space-y-2">
-                  {!deployments.length ? (
-                    <p className="py-6 text-center text-sm text-muted-foreground">
-                      배포 이력이 없습니다
-                    </p>
-                  ) : (
-                    deployments.map((d) => (
+                ) : (
+                  <div
+                    className="space-y-1"
+                    role="group"
+                    aria-label="배포 이력"
+                  >
+                    <div
+                      className="hidden grid-cols-[minmax(0,1fr)_100px_minmax(0,1fr)_150px_100px] gap-4 border-b px-3 pb-3 text-xs text-muted-foreground lg:grid"
+                      aria-hidden="true"
+                    >
+                      <span>버전</span>
+                      <span>상태</span>
+                      <span>배포 파일</span>
+                      <span>시작 시각</span>
+                      <span>소요 시간</span>
+                    </div>
+                    {deployments.map((d) => (
                       <Button
                         key={d.id}
                         variant={
                           d.id === state.deploymentId ? "secondary" : "ghost"
                         }
-                        className="h-auto w-full flex-col items-stretch gap-2 p-3 text-left"
+                        className="grid h-auto w-full grid-cols-2 gap-2 p-3 text-left lg:grid-cols-[minmax(0,1fr)_100px_minmax(0,1fr)_150px_100px] lg:gap-4"
                         aria-pressed={d.id === state.deploymentId}
                         disabled={Boolean(state.busy)}
                         onClick={() => app.selectDeployment(d)}
                       >
-                        <span className="flex items-center justify-between gap-2">
-                          <span className="truncate">{d.version}</span>
+                        <span className="truncate font-medium">
+                          {d.version}
+                        </span>
+                        <span>
                           <StatusBadge status={d.status} />
+                        </span>
+                        <span className="truncate text-xs text-muted-foreground">
+                          {project.artifacts.find((a) => a.id === d.artifactId)
+                            ?.name || "보관 종료된 파일"}
                         </span>
                         <span className="text-xs text-muted-foreground">
                           {formatDate(d.startedAt)}
                         </span>
-                        <span className="truncate text-xs text-muted-foreground">
-                          {project.artifacts.find((a) => a.id === d.artifactId)
-                            ?.name || "배포 파일"}
+                        <span className="text-xs text-muted-foreground">
+                          {formatDuration(d)}
                         </span>
                       </Button>
-                    ))
-                  )}
-                </CardContent>
-              </Card>
-            </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+            <Logs app={app} />
           </>
         )}
       </main>
