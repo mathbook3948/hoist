@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readSettings } from "./settings";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -31,30 +31,7 @@ export function resolveDataDir(
 
   const configDir = join(home, ".hoist");
   const settingsPath = join(configDir, "settings.json");
-  let text: string;
-  try {
-    text = readFileSync(settingsPath, "utf8");
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT")
-      return join(configDir, "data");
-    throw new Error(`Cannot read ${settingsPath}`, { cause: error });
-  }
-  let settings: unknown;
-  try {
-    settings = JSON.parse(text.replace(/^\uFEFF/, ""));
-  } catch {
-    throw new Error(`Invalid JSON in ${settingsPath}`);
-  }
-  if (
-    !settings ||
-    typeof settings !== "object" ||
-    Array.isArray(settings) ||
-    Object.keys(settings).some((key) => key !== "dataDir")
-  ) {
-    throw new Error(
-      `${settingsPath} must be an object containing only optional dataDir`,
-    );
-  }
+  const settings = readSettings(home);
   return "dataDir" in settings
     ? path(settings.dataDir, configDir, settingsPath)
     : join(configDir, "data");

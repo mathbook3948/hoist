@@ -5,8 +5,11 @@ import { createAuth } from "./auth";
 import { createArtifacts } from "./artifacts";
 import { createDeployments } from "./deployments";
 import { createProjects } from "./projects";
+import { readSettings, type Settings } from "./settings";
+import { createIPFilter } from "./network";
 
-export function startServer(store: Store) {
+export function startServer(store: Store, settings: Settings = readSettings()) {
+  const isAllowedIP = createIPFilter(settings.allowedIP);
   const dir = store.dir;
   const config = store.getConfig();
   store.recover();
@@ -32,6 +35,8 @@ export function startServer(store: Store) {
     maxRequestBodySize: config.maxArtifactBytes,
     async fetch(req, server) {
       try {
+        const clientIP = server.requestIP(req)?.address;
+        if (!isAllowedIP(clientIP)) fail(403, "IP address rejected");
         if (shuttingDown) fail(503, "Shutting down");
         const url = new URL(req.url);
         const expectedHost = new URL(origin).host;
@@ -60,10 +65,7 @@ export function startServer(store: Store) {
             },
           });
         if (path === "/api/login" && method === "POST")
-          return await auth.login(
-            req,
-            server.requestIP(req)?.address || "unknown",
-          );
+          return await auth.login(req, clientIP!);
         if (path === "/api/me" && method === "GET") return auth.me(req);
         if (path === "/api/logout" && method === "POST")
           return auth.logout(req);

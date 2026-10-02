@@ -167,8 +167,58 @@ try {
   );
   assert.equal((await scriptResponse.json()).scriptContent, scriptContent);
   assert.equal(await Bun.file(project.script).text(), scriptContent);
+  server.kill();
+  await server.exited;
+  writeFileSync(
+    join(home, ".hoist/settings.json"),
+    JSON.stringify({ dataDir: data, allowedIP: "100.64.0.0/10" }),
+  );
+  // Explicit data-dir must not bypass the home network policy.
+  server = Bun.spawn([executable, "serve", "--data-dir", data], {
+    cwd: tmp,
+    env,
+    stdout: "ignore",
+    stderr: "inherit",
+  });
+  ready = false;
+  for (let i = 0; i < 100; i++) {
+    if (server.exitCode !== null)
+      throw new Error("Filtered executable exited early");
+    try {
+      const response = await fetch(origin + "/", {
+        headers: { "X-Forwarded-For": "100.80.1.2" },
+      });
+      if (
+        response.status === 403 &&
+        (await response.json()).error === "IP address rejected"
+      ) {
+        ready = true;
+        break;
+      }
+    } catch {}
+    await Bun.sleep(50);
+  }
+  assert.ok(ready, "Compiled server must load allowedIP even with --data-dir");
+  server.kill();
+  await server.exited;
+  writeFileSync(
+    join(home, ".hoist/settings.json"),
+    JSON.stringify({ dataDir: data, allowedIP: "invalid" }),
+  );
+  const invalid = Bun.spawn([executable, "serve", "--data-dir", data], {
+    cwd: tmp,
+    env,
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const [exitCode, error] = await Promise.all([
+    invalid.exited,
+    new Response(invalid.stderr).text(),
+  ]);
+  assert.notEqual(exitCode, 0);
+  assert.match(error, /Invalid allowedIP/);
   console.log(
-    `Executable passed: CLI, SQLite, all ${files.length} embedded Vite assets, login and API with an empty PATH from a temporary directory.`,
+    `Executable passed: CLI, SQLite, all ${files.length} embedded Vite assets, login, API and settings IP policy with an empty PATH from a temporary directory.`,
   );
 } finally {
   if (server) {

@@ -23,6 +23,7 @@ Stop the server before changing accounts, projects or config.
 Passwords are prompted with masked input and confirmation. Use --password-stdin for automation, never argv.
 --data-dir is optional: flag > HOIST_DATA_DIR > ~/.hoist/settings.json (dataDir) > ~/.hoist/data.
 The development CLI defaults to the repository .data instead of home settings.
+All servers read allowedIP from ~/.hoist/settings.json (default: 127.0.0.1). Accepts one IP or CIDR; restart to apply.
 `;
 export async function main(argv: string[], developmentDataDir?: string) {
   if (!argv.length || argv.includes("--help")) {

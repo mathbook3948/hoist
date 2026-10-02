@@ -31,7 +31,7 @@ bun run cli serve --data-dir "$HOME/.local/share/hoist"
 
 설치된 실행파일은 옵션 없이 `hoist init`, `hoist user set admin`, `hoist serve`로 실행할 수 있습니다. 데이터 경로 우선순위는 `--data-dir` → `HOIST_DATA_DIR` → `~/.hoist/settings.json`의 `dataDir` → `~/.hoist/data`입니다. `~`는 실행 중인 OS 사용자의 홈 디렉터리입니다 (Windows에서는 사용자 프로필 폴더).
 
-경로를 바꿀 때만 `~/.hoist/settings.json`을 직접 만드세요. 예:
+경로나 접근 허용 IP를 바꿀 때 `~/.hoist/settings.json`을 직접 만드세요. 예:
 
 ```json
 {
@@ -39,7 +39,7 @@ bun run cli serve --data-dir "$HOME/.local/share/hoist"
 }
 ```
 
-파일이 없으면 기본 경로를 사용하며 설정 파일을 자동 생성하거나 덮어쓰지 않습니다. 상대 경로는 설정 파일이 있는 `~/.hoist` 기준이며 `~/data`도 사용할 수 있습니다. 잘못된 JSON이나 `dataDir`은 오류로 중단합니다. 명령행·환경 변수의 상대 경로는 현재 작업 디렉터리 기준입니다. 계정·프로젝트·서버 설정은 계속 SQLite에 저장하며 `settings.json`에는 DB 위치만 지정합니다. 기존 데이터는 자동으로 이동하지 않으므로 기존 DB를 계속 쓸 때는 그 경로를 설정하세요. 시스템 서비스는 서비스 사용자의 홈을 사용하므로 제공한 systemd 예제처럼 `--data-dir /var/lib/hoist`를 고정해도 됩니다.
+파일이 없으면 기본 경로를 사용하며 설정 파일을 자동 생성하거나 덮어쓰지 않습니다. 상대 경로는 설정 파일이 있는 `~/.hoist` 기준이며 `~/data`도 사용할 수 있습니다. 잘못된 JSON이나 `dataDir`은 오류로 중단합니다. 명령행·환경 변수의 상대 경로는 현재 작업 디렉터리 기준입니다. 계정·프로젝트·서버 설정은 계속 SQLite에 저장하며 `settings.json`에는 DB 위치와 접근 허용 IP를 지정합니다. 기존 데이터는 자동으로 이동하지 않으므로 기존 DB를 계속 쓸 때는 그 경로를 설정하세요. 시스템 서비스는 서비스 사용자의 홈을 사용하므로 제공한 systemd 예제처럼 `--data-dir /var/lib/hoist`를 고정해도 됩니다.
 
 ```text
 DATA_DIR/
@@ -66,6 +66,30 @@ bun run cli project remove PROJECT --data-dir /absolute/data
 ```
 
 `user set`은 기존 관리자 계정의 비밀번호 변경에도 사용합니다. 관리자 계정은 하나만 지원합니다. `project set`은 설정을 갱신합니다. 프로젝트 등록 해제는 데이터 삭제가 아닙니다. 남은 파일은 전체 저장 용량 제한에 포함되므로 불필요한 데이터는 서버를 멈춘 뒤 관리자가 정리해야 합니다. 비정상 종료 후 실제 프로세스가 없으면 PID 락을 복구합니다. PID가 없는 락은 안전을 위해 자동 삭제하지 않습니다. 프로세스가 없는 것을 확인하고 정리하세요.
+
+## IP 접근 제한
+
+`~/.hoist/settings.json`의 `allowedIP`는 **IP 또는 CIDR 문자열 하나**를 받습니다. 생략하면 `127.0.0.1`만 허용합니다. IPv4와 IPv6를 지원하며 배열·호스트명·빈 문자열·잘못된 CIDR은 서버 시작 오류입니다. 예를 들어 기존 `dataDir`과 함께 다음처럼 설정합니다:
+
+```json
+{
+  "dataDir": "/var/lib/hoist",
+  "allowedIP": "100.64.0.0/10"
+}
+```
+
+- Tailscale IPv4 대역: `100.64.0.0/10`
+- Tailscale IPv6 대역: `fd7a:115c:a1e0::/48`
+- 특정 장치 하나: `100.80.90.10` (실제 장치 IP로 교체)
+- 로컬 IPv6만: `::1`
+
+Tailscale 대역은 [공식 예약 주소 문서](https://tailscale.com/docs/reference/reserved-ip-addresses)를 따릅니다. 설정은 기본값을 대체합니다. Tailscale 대역을 지정하면 `127.0.0.1`은 더 이상 허용되지 않습니다. IP 범위 확인이므로 Tailscale의 장치 인증이나 ACL을 대신하지 않습니다.
+
+서버는 시작할 때 설정을 읽으며 변경 후 재시작해야 합니다. 개발 서버나 `--data-dir`/`HOIST_DATA_DIR`로 데이터 위치를 지정한 서버도 실행 사용자 홈의 `allowedIP`를 읽습니다. 개발 모드가 홈 설정을 건너뛰는 것은 데이터 경로 선택뿐입니다. 파일 감시나 주기적인 재로딩은 하지 않습니다.
+
+허용되지 않은 실제 연결 IP는 화면·정적 파일·로그인·모든 API에서 본문 처리 전에 HTTP 403으로 거절합니다. IPv4-mapped IPv6도 IPv4 규칙에 맞춰 판정하며, `X-Forwarded-For`, `X-Real-IP`, `Forwarded`는 신뢰하지 않습니다. 프록시를 쓰면 검사 대상은 프록시 IP입니다. 같은 서버의 프록시를 사용하는 경우 Hoist에는 `127.0.0.1`을 허용하고 원래 클라이언트의 IP 제한은 프록시에서 적용하세요.
+
+`allowedIP`는 접근 제어만 바꾸며 SQLite의 `host`·`port`·`publicOrigin`을 변경하지 않습니다. 기본 `host=127.0.0.1`은 원격 연결을 받지 않습니다. 현재 외부 바인딩에는 HTTPS `publicOrigin`과 보호된 역방향 프록시가 필요하므로, 이 값만 Tailscale 대역으로 바꿔도 Tailscale 주소로 직접 HTTP 접속이 열리는 것은 아닙니다.
 
 ## 웹 프로젝트 관리
 
