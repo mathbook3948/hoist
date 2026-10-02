@@ -62,4 +62,18 @@
   body {
     @apply bg-background text-foreground antialiased;
   }
+  button:not(:disabled):not([aria-disabled="true"]),
+  a[href]:not([aria-disabled="true"]),
+  [role="button"]:not(:disabled):not([aria-disabled="true"]),
+  select:enabled,
+  input[type="file"]:enabled,
+  input[type="file"]:enabled::file-selector-button,
+  [data-slot="field"]:has(
+      [role="checkbox"]:not(:disabled):not([aria-disabled="true"])
+    )
+    label[for],
+  [data-slot="field"]:has(select:enabled, input[type="file"]:enabled)
+    > label[for] {
+    @apply cursor-pointer;
+  }
 }
