@@ -9,6 +9,7 @@ import {
   realpathSync,
   openSync,
   closeSync,
+  rmSync,
 } from "node:fs";
 import { resolve, join } from "node:path";
 import { migrate } from "./migrations";
@@ -185,7 +186,23 @@ export class Store {
     })();
   }
   removeProject(id: string) {
-    this.db.query("UPDATE projects SET archived=1 WHERE id=?").run(id);
+    const root = join(this.dir, "projects");
+    const folder = projectDir(this.dir, id);
+    const rootStat = lstatSync(root);
+    const folderStat = lstatSync(folder, { throwIfNoEntry: false });
+    if (
+      rootStat.isSymbolicLink() ||
+      !rootStat.isDirectory() ||
+      (folderStat && (folderStat.isSymbolicLink() || !folderStat.isDirectory()))
+    )
+      throw new Error("Project directory must be a real directory");
+    this.db.transaction(() => {
+      this.db.query("DELETE FROM artifacts WHERE projectId=?").run(id);
+      this.db.query("DELETE FROM deployments WHERE projectId=?").run(id);
+      this.db.query("DELETE FROM projects WHERE id=?").run(id);
+      // Roll back metadata if file removal fails so deletion can be retried.
+      rmSync(folder, { recursive: true, force: true });
+    })();
   }
   getState(projectId: string): State {
     return {

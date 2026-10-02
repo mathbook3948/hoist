@@ -6,7 +6,7 @@ import {
 } from "../../../server/src/models";
 import type { Console } from "../console";
 import { Button } from "./ui/button";
-import { Plus, Settings, Archive } from "lucide-react";
+import { Plus, Settings, Trash2 } from "lucide-react";
 import { Input } from "./ui/input";
 import { Textarea } from "./ui/textarea";
 import { Label } from "./ui/label";
@@ -134,7 +134,7 @@ export function ProjectManagement({ app }: { app: Console }) {
           <Button
             ref={addButton}
             id="project-add-button"
-            variant="outline"
+            variant="secondary"
             size="icon"
             aria-label="등록"
             title="프로젝트 등록"
@@ -149,7 +149,7 @@ export function ProjectManagement({ app }: { app: Console }) {
             <Button
               ref={editButton}
               id="project-edit-button"
-              variant="outline"
+              variant="secondary"
               size="icon"
               aria-label="설정"
               title="프로젝트 설정"
@@ -161,11 +161,10 @@ export function ProjectManagement({ app }: { app: Console }) {
             <Button
               ref={removeButton}
               id="project-remove-button"
-              variant="ghost"
+              variant="destructive"
               size="icon"
-              aria-label="등록 해제"
-              title="프로젝트 등록 해제"
-              className="text-destructive hover:text-destructive"
+              aria-label="프로젝트 삭제"
+              title="프로젝트 삭제"
               disabled={app.managementBusy || !app.project}
               onClick={() => {
                 app.update({ notice: "" });
@@ -173,7 +172,7 @@ export function ProjectManagement({ app }: { app: Console }) {
                 setRemoving(app.project || null);
               }}
             >
-              <Archive aria-hidden="true" />
+              <Trash2 aria-hidden="true" />
             </Button>
           </>
         )}
@@ -269,7 +268,7 @@ export function ProjectManagement({ app }: { app: Console }) {
               {error}
               <DialogFooter>
                 <Button
-                  variant="outline"
+                  variant="secondary"
                   type="button"
                   disabled={Boolean(app.state.busy)}
                   onClick={() => setEditor(null)}
@@ -305,10 +304,10 @@ export function ProjectManagement({ app }: { app: Console }) {
           }}
         >
           <AlertDialogHeader>
-            <AlertDialogTitle>프로젝트 등록 해제 확인</AlertDialogTitle>
+            <AlertDialogTitle>프로젝트 삭제 확인</AlertDialogTitle>
             <AlertDialogDescription>
-              ‘{removing?.name}’ 프로젝트의 등록을 해제할까요? 기존 파일과 배포
-              이력은 보관됩니다.
+              ‘{removing?.name}’ 프로젝트를 삭제할까요? 프로젝트 폴더의 모든
+              파일과 배포 이력이 삭제되며 복구할 수 없습니다.
             </AlertDialogDescription>
           </AlertDialogHeader>
           {error}
@@ -325,7 +324,7 @@ export function ProjectManagement({ app }: { app: Console }) {
                   setRemoving(null);
               }}
             >
-              등록 해제
+              프로젝트 삭제
             </Button>
           </AlertDialogFooter>
         </AlertDialogContent>

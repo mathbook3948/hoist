@@ -126,7 +126,7 @@ test("SQLite defaults, settings CLI validation, runtime locking and single admin
   }
 });
 
-test("project HTTP management persists settings, protects mutations, and retains data on removal", async () => {
+test("project HTTP management persists settings, protects mutations, and deletes project data", async () => {
   const tmp = mkdtempSync(join(tmpdir(), "hoist-project-api-"));
   const f = await fixture(tmp);
   const script = join(tmp, "deploy.sh");
@@ -252,22 +252,25 @@ test("project HTTP management persists settings, protects mutations, and retains
     const deploy = await pendingDeploy;
     expect(deploy.status).toBe(202);
     const deployment = (await deploy.json()).deployment;
-    expect((await f.call("/api/projects/docker", "PUT", input)).status).toBe(
-      409,
-    );
-    expect((await f.call("/api/projects/docker", "DELETE")).status).toBe(409);
-    expect(
-      (await f.call("/api/projects", "POST", { ...input, id: "another" }))
-        .status,
-    ).toBe(409);
-    expect(
-      (
-        await f.call(
-          `/api/projects/docker/deployments/${deployment.id}/cancel`,
-          "POST",
-        )
-      ).status,
-    ).toBe(200);
+    // Windows cannot run /bin/sh; keep lifecycle checks on POSIX platforms.
+    if (process.platform !== "win32") {
+      expect((await f.call("/api/projects/docker", "PUT", input)).status).toBe(
+        409,
+      );
+      expect((await f.call("/api/projects/docker", "DELETE")).status).toBe(409);
+      expect(
+        (await f.call("/api/projects", "POST", { ...input, id: "another" }))
+          .status,
+      ).toBe(409);
+      expect(
+        (
+          await f.call(
+            `/api/projects/docker/deployments/${deployment.id}/cancel`,
+            "POST",
+          )
+        ).status,
+      ).toBe(200);
+    }
     for (let i = 0; i < 100; i++) {
       const result = await (
         await f.call(`/api/projects/docker/deployments/${deployment.id}`)
@@ -276,12 +279,18 @@ test("project HTTP management persists settings, protects mutations, and retains
       await Bun.sleep(20);
     }
     expect((await f.call("/api/projects/docker", "DELETE")).status).toBe(200);
-    expect(existsSync(artifactPath)).toBe(true);
+    expect(existsSync(join(f.dir, "projects", "docker"))).toBe(false);
+    expect(f.store.getState("docker")).toEqual({
+      artifacts: [],
+      deployments: [],
+    });
+    expect(existsSync(script)).toBe(true);
     expect((await (await f.call("/api/projects")).json()).projects).toEqual([]);
     expect((await f.call("/api/projects", "POST", input)).status).toBe(201);
-    const restored = (await (await f.call("/api/projects")).json()).projects[0];
-    expect(restored.artifacts[0].id).toBe(artifact.id);
-    expect(restored.deployments[0].status).toBe("cancelled");
+    const recreated = (await (await f.call("/api/projects")).json())
+      .projects[0];
+    expect(recreated.artifacts).toEqual([]);
+    expect(recreated.deployments).toEqual([]);
     expect((await f.call("/api/projects/missing", "DELETE")).status).toBe(404);
     const persisted = f.store.getProjects();
     expect(persisted[0].id).toBe("docker");
@@ -406,7 +415,7 @@ test("managed scripts use generated IDs, load on demand, and persist edits throu
     ).json();
     expect(second.project.id).not.toBe(project.id);
     expect((await f.call(endpoint, "DELETE")).status).toBe(200);
-    expect(existsSync(scriptPath)).toBe(true);
+    expect(existsSync(join(f.dir, "projects", project.id))).toBe(false);
     expect((await f.call(endpoint + "/script")).status).toBe(404);
   } finally {
     await f.runtime.stop();
@@ -565,6 +574,10 @@ test("CLI project create generates an ID and imports the initial script", async 
       expect(readFileSync(project.script, "utf8")).toBe(
         "#!/bin/sh\necho cli\n",
       );
+      await main(["project", "remove", project.id, "--data-dir", data]);
+      expect(store.getProjects(true)).toEqual([]);
+      expect(existsSync(join(store.dir, "projects", project.id))).toBe(false);
+      expect(existsSync(input)).toBe(true);
     } finally {
       store.close();
     }

@@ -154,10 +154,7 @@ export function useConsole() {
       const same = preserve && project?.id === before.projectId;
       const deployments = byNewest(project?.deployments || [], "startedAt");
       const deployment =
-        (same && deployments.find((d) => d.id === before.deploymentId)) ||
-        deployments.find(isActive) ||
-        deployments[0] ||
-        null;
+        (same && deployments.find((d) => d.id === before.deploymentId)) || null;
       const artifacts = byNewest(project?.artifacts || [], "createdAt");
       update({
         loadingProjects: false,
@@ -538,8 +535,7 @@ export function useConsole() {
         await loadProjects(false);
         if (valid())
           update({
-            notice:
-              "프로젝트 등록을 해제했어요. 기존 파일과 배포 이력은 보관됩니다",
+            notice: "프로젝트와 파일을 삭제했어요",
           });
       }),
   };

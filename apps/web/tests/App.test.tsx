@@ -240,7 +240,7 @@ describe("React deployment console", () => {
   });
   test("unknown project URL never silently selects another project", async () => {
     fixture(true, [demo()], "/missing");
-    await screen.findByText("존재하지 않거나 등록 해제된 프로젝트입니다.");
+    await screen.findByText("존재하지 않거나 삭제된 프로젝트입니다.");
     expect(window.location.pathname).toBe("/missing");
     expect(
       screen.queryByRole("button", { name: "등록", exact: true }),
@@ -257,7 +257,7 @@ describe("React deployment console", () => {
         exitCode: 0,
       },
     ];
-    const { data } = fixture(true, [project]);
+    const { data, fetcher, user } = fixture(true, [project]);
     data.intercept = (path) =>
       path.includes("/deployments/")
         ? json({ deployment: project.deployments[0], log: "done" })
@@ -267,11 +267,26 @@ describe("React deployment console", () => {
     expect(within(history).getAllByRole("columnheader")).toHaveLength(5);
     expect(history).toHaveTextContent("release.tar");
     expect(history).toHaveTextContent("1분 5초");
+    expect(screen.queryByLabelText("배포 실행 로그")).toBeNull();
+    expect(callsTo(fetcher, "/deployments/d1")).toHaveLength(0);
+    await user.click(
+      within(history).getByRole("button", { name: "v1", exact: true }),
+    );
+    await waitFor(() =>
+      expect(screen.getByLabelText("배포 실행 로그")).toHaveTextContent("done"),
+    );
     expect(
       history.compareDocumentPosition(screen.getByLabelText("배포 실행 로그")) &
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
     expect(screen.queryByLabelText("배포 파일 업로드")).toBeNull();
+    await user.click(screen.getByRole("link", { name: "프로젝트 목록" }));
+    await user.click(
+      await screen.findByRole("link", { name: "Demo", exact: true }),
+    );
+    await ready();
+    expect(screen.queryByLabelText("배포 실행 로그")).toBeNull();
+    expect(callsTo(fetcher, "/deployments/d1")).toHaveLength(1);
   });
   test("clicking deployment metadata selects that row and loads its logs", async () => {
     const project = demo();
@@ -289,6 +304,9 @@ describe("React deployment console", () => {
         : undefined;
     };
     await ready();
+    expect(screen.queryByLabelText("배포 실행 로그")).toBeNull();
+    expect(callsTo(fetcher, "/deployments/d1")).toHaveLength(0);
+    await user.click(screen.getByRole("button", { name: "v1", exact: true }));
     await waitFor(() =>
       expect(screen.getByLabelText("배포 실행 로그")).toHaveTextContent(
         "log v1",
@@ -461,8 +479,11 @@ describe("React deployment console", () => {
     const project = demo();
     project.deployments = [deployment];
     project.running = "d1";
-    const { data, fetcher } = fixture(true, [project]);
+    const { data, fetcher, user } = fixture(true, [project]);
     await ready();
+    expect(screen.queryByLabelText("배포 실행 로그")).toBeNull();
+    expect(callsTo(fetcher, "/deployments/d1")).toHaveLength(0);
+    await user.click(screen.getByRole("button", { name: "v1", exact: true }));
     await waitFor(() =>
       expect(callsTo(fetcher, "/deployments/d1")).toHaveLength(1),
     );
@@ -493,6 +514,7 @@ describe("React deployment console", () => {
     project.running = "d1";
     const { fetcher, user } = fixture(true, [project]);
     await ready();
+    await user.click(screen.getByRole("button", { name: "v1", exact: true }));
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "실행 취소" })).toBeEnabled(),
     );
@@ -520,6 +542,7 @@ describe("React deployment console", () => {
           })
         : undefined;
     await ready();
+    await user.click(screen.getByRole("button", { name: "v1", exact: true }));
     await waitFor(() =>
       expect(callsTo(fetcher, "/deployments/d1")).toHaveLength(1),
     );
@@ -527,9 +550,7 @@ describe("React deployment console", () => {
     await user.click(await screen.findByRole("link", { name: /Second/ }));
     await screen.findByRole("heading", { name: "Second", level: 1 });
     await act(async () => release(json({ deployment, log: "stale response" })));
-    expect(screen.getByLabelText("배포 실행 로그")).not.toHaveTextContent(
-      "stale response",
-    );
+    expect(screen.queryByLabelText("배포 실행 로그")).toBeNull();
     expect(screen.queryByText("실행 로그를 불러오는 중…")).toBeNull();
   });
   test("an empty workspace supports project registration and editing", async () => {
@@ -589,15 +610,18 @@ describe("React deployment console", () => {
     ]);
     await ready();
     await user.click(
-      screen.getByRole("button", { name: "등록 해제", exact: true }),
+      screen.getByRole("button", { name: "프로젝트 삭제", exact: true }),
     );
     expect(
       fetcher.mock.calls.some(([, init]) => init?.method === "DELETE"),
     ).toBe(false);
+    expect(
+      screen.getByRole("alertdialog", { name: "프로젝트 삭제 확인" }),
+    ).toHaveTextContent("복구할 수 없습니다");
     await user.click(
       within(
-        screen.getByRole("alertdialog", { name: "프로젝트 등록 해제 확인" }),
-      ).getByRole("button", { name: "등록 해제" }),
+        screen.getByRole("alertdialog", { name: "프로젝트 삭제 확인" }),
+      ).getByRole("button", { name: "프로젝트 삭제" }),
     );
     await screen.findByRole("link", { name: /Second/ });
     expect(window.location.pathname).toBe("/");
@@ -657,7 +681,7 @@ describe("React deployment console", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(settings).toHaveFocus();
     const remove = screen.getByRole("button", {
-      name: "등록 해제",
+      name: "프로젝트 삭제",
       exact: true,
     });
     await user.click(remove);

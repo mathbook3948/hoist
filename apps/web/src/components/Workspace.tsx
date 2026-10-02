@@ -4,8 +4,7 @@ import { ProjectManagement } from "./ProjectManagement";
 import { DeployForm } from "./DeployForm";
 import { Logs } from "./Logs";
 import { Button } from "./ui/button";
-import { Card, CardHeader, CardTitle, CardContent } from "./ui/card";
-import { Badge } from "./ui/badge";
+import { Card, CardContent } from "./ui/card";
 
 import { StatusBadge } from "./StatusBadge";
 import { ArrowLeft, LogOut } from "lucide-react";
@@ -19,46 +18,38 @@ export function Workspace({ app }: { app: Console }) {
     <div className="min-h-svh">
       <main className="mx-auto w-full max-w-7xl min-w-0 space-y-6 p-4 md:p-8">
         <header className="flex flex-wrap items-center justify-between gap-4">
-          <div className="min-w-0 space-y-2">
-            <div className="flex min-w-0 items-center gap-2">
-              {state.projectId && (
-                <Button asChild variant="ghost" size="icon">
-                  <a
-                    href="/"
-                    aria-label="프로젝트 목록"
-                    title="목록으로"
-                    onClick={(e) => {
-                      if (
-                        e.button === 0 &&
-                        !e.ctrlKey &&
-                        !e.metaKey &&
-                        !e.shiftKey &&
-                        !e.altKey
-                      ) {
-                        e.preventDefault();
-                        app.selectProject(null);
-                      }
-                    }}
-                  >
-                    <ArrowLeft aria-hidden="true" />
-                  </a>
-                </Button>
-              )}
-              <h1 className="truncate text-2xl font-semibold tracking-tight">
-                {project?.name ||
-                  (state.projectId
-                    ? "프로젝트를 찾을 수 없습니다"
-                    : "프로젝트")}
-              </h1>
-            </div>
+          <div className="flex min-w-0 items-center gap-2">
+            {state.projectId && (
+              <Button asChild variant="secondary" size="icon">
+                <a
+                  href="/"
+                  aria-label="프로젝트 목록"
+                  title="목록으로"
+                  onClick={(e) => {
+                    if (
+                      e.button === 0 &&
+                      !e.ctrlKey &&
+                      !e.metaKey &&
+                      !e.shiftKey &&
+                      !e.altKey
+                    ) {
+                      e.preventDefault();
+                      app.selectProject(null);
+                    }
+                  }}
+                >
+                  <ArrowLeft aria-hidden="true" />
+                </a>
+              </Button>
+            )}
+            <h1 className="h-9 truncate text-2xl leading-9 font-semibold tracking-tight">
+              {project?.name ||
+                (state.projectId ? "프로젝트를 찾을 수 없습니다" : "프로젝트")}
+            </h1>
             {project && (
-              <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-                <StatusBadge
-                  status={project.running ? "running" : latest?.status}
-                />
-                <span>최근 배포 {latest?.version || "없음"}</span>
-                <span>· 실행 제한 {project.timeoutSeconds}초</span>
-              </div>
+              <StatusBadge
+                status={project.running ? "running" : latest?.status}
+              />
             )}
           </div>
           <div className="flex flex-wrap items-center gap-3">
@@ -70,7 +61,7 @@ export function Workspace({ app }: { app: Console }) {
             )}
             {project && <DeployForm key={project.id} app={app} />}
             <Button
-              variant="ghost"
+              variant="secondary"
               size="icon"
               aria-label="로그아웃"
               title={`${state.user} · 로그아웃`}
@@ -166,75 +157,67 @@ export function Workspace({ app }: { app: Console }) {
         ) : !project ? (
           <Card>
             <CardContent className="py-10 text-center text-sm text-muted-foreground">
-              존재하지 않거나 등록 해제된 프로젝트입니다.
+              존재하지 않거나 삭제된 프로젝트입니다.
             </CardContent>
           </Card>
         ) : (
           <>
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between">
-                <CardTitle>배포 이력</CardTitle>
-                <Badge variant="secondary">{deployments.length}</Badge>
-              </CardHeader>
-              <CardContent>
-                <DataTable
-                  label="배포 이력"
-                  rows={deployments}
-                  rowKey={(d) => d.id}
-                  onRowClick={app.selectDeployment}
-                  disabled={Boolean(state.busy)}
-                  selectedKey={state.deploymentId}
-                  emptyMessage="배포 이력이 없습니다. 새 배포에서 파일과 버전을 선택하세요."
-                  columns={[
-                    {
-                      id: "version",
-                      header: "버전",
-                      className: "w-40",
-                      cell: (d) => (
-                        <Button
-                          variant="link"
-                          className="max-w-full justify-start p-0"
-                          aria-pressed={d.id === state.deploymentId}
-                          disabled={Boolean(state.busy)}
-                          onClick={() => app.selectDeployment(d)}
-                        >
-                          <span className="truncate">{d.version}</span>
-                        </Button>
-                      ),
-                    },
-                    {
-                      id: "status",
-                      header: "상태",
-                      className: "w-28",
-                      cell: (d) => <StatusBadge status={d.status} />,
-                    },
-                    {
-                      id: "artifact",
-                      header: "배포 파일",
-                      cell: (d) => (
-                        <span className="block truncate">
-                          {project.artifacts.find((a) => a.id === d.artifactId)
-                            ?.name || "보관 종료된 파일"}
-                        </span>
-                      ),
-                    },
-                    {
-                      id: "started",
-                      header: "시작 시각",
-                      className: "w-44 tabular-nums",
-                      cell: (d) => formatDate(d.startedAt),
-                    },
-                    {
-                      id: "duration",
-                      header: "소요 시간",
-                      className: "w-28 tabular-nums",
-                      cell: (d) => formatDuration(d),
-                    },
-                  ]}
-                />
-              </CardContent>
-            </Card>
-            <Logs app={app} />
+            <DataTable
+              label="배포 이력"
+              rows={deployments}
+              rowKey={(d) => d.id}
+              onRowClick={app.selectDeployment}
+              disabled={Boolean(state.busy)}
+              selectedKey={state.deploymentId}
+              emptyMessage="배포 이력이 없습니다. 새 배포에서 파일과 버전을 선택하세요."
+              columns={[
+                {
+                  id: "version",
+                  header: "버전",
+                  className: "w-40",
+                  cell: (d) => (
+                    <Button
+                      variant="secondary"
+                      className="max-w-full justify-start"
+                      aria-pressed={d.id === state.deploymentId}
+                      disabled={Boolean(state.busy)}
+                      onClick={() => app.selectDeployment(d)}
+                    >
+                      <span className="truncate">{d.version}</span>
+                    </Button>
+                  ),
+                },
+                {
+                  id: "status",
+                  header: "상태",
+                  className: "w-28",
+                  cell: (d) => <StatusBadge status={d.status} />,
+                },
+                {
+                  id: "artifact",
+                  header: "배포 파일",
+                  cell: (d) => (
+                    <span className="block truncate">
+                      {project.artifacts.find((a) => a.id === d.artifactId)
+                        ?.name || "보관 종료된 파일"}
+                    </span>
+                  ),
+                },
+                {
+                  id: "started",
+                  header: "시작 시각",
+                  className: "w-44 tabular-nums",
+                  cell: (d) => formatDate(d.startedAt),
+                },
+                {
+                  id: "duration",
+                  header: "소요 시간",
+                  className: "w-28 tabular-nums",
+                  cell: (d) => formatDuration(d),
+                },
+              ]}
+            />
+            {state.deploymentId && <Logs app={app} />}
           </>
         )}
       </main>

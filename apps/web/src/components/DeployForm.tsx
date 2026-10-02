@@ -142,7 +142,7 @@ export function DeployForm({ app }: { app: Console }) {
               </p>
               <Button
                 id="upload-button"
-                variant="outline"
+                variant="secondary"
                 type="submit"
                 disabled={disabled || !state.file || oversized}
               >
@@ -201,7 +201,7 @@ export function DeployForm({ app }: { app: Console }) {
             <div className="flex flex-wrap items-center justify-end gap-3">
               <Button
                 type="button"
-                variant="outline"
+                variant="secondary"
                 disabled={Boolean(state.busy)}
                 onClick={() => setOpen(false)}
               >

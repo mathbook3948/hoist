@@ -1,4 +1,5 @@
-import { test, expect } from "bun:test";
+import { test, expect, spyOn } from "bun:test";
+import * as fs from "node:fs";
 import { Database } from "bun:sqlite";
 import {
   mkdtempSync,
@@ -6,6 +7,8 @@ import {
   rmSync,
   existsSync,
   statSync,
+  mkdirSync,
+  symlinkSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -35,7 +38,7 @@ const deployment = (id: string, artifactId: string): Deployment => ({
   startedAt: new Date().toISOString(),
 });
 
-test("SQLite survives reopen, retains archived projects, and recovers interrupted history and partial files", () => {
+test("SQLite survives reopen and recovers interrupted history and partial files", () => {
   const dir = mkdtempSync(join(tmpdir(), "hoist-sqlite-"));
   let store = new Store(dir);
   try {
@@ -50,12 +53,11 @@ test("SQLite survives reopen, retains archived projects, and recovers interrupte
     store.addArtifact(project.id, artifact("ready"));
     store.addArtifact(project.id, artifact("missing"));
     store.addDeployment(project.id, deployment("running", "ready"));
-    store.removeProject(project.id);
     store.close();
     store = new Store(dir);
     // Opening for a CLI command must not rewrite running deployment history.
     expect(store.getState(project.id).deployments[0].status).toBe("running");
-    expect(store.getProjects()).toEqual([]);
+    expect(store.getProjects()).toEqual([project]);
     expect(store.getConfig().port).toBe(8765);
     expect(store.getAccount()?.username).toBe("admin");
     store.recover();
@@ -73,9 +75,111 @@ test("SQLite survives reopen, retains archived projects, and recovers interrupte
     store.setProject(project);
     expect(store.getProjects()).toEqual([project]);
     expect(store.getState(project.id).deployments).toHaveLength(1);
-    expect(statSync(store.path).mode & 0o777).toBe(0o600);
+    if (process.platform !== "win32")
+      expect(statSync(store.path).mode & 0o777).toBe(0o600);
     expect(existsSync(join(dir, "config.json"))).toBe(false);
     expect(existsSync(join(base, "state.json"))).toBe(false);
+  } finally {
+    store.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("project deletion removes all managed files and metadata without touching other projects or external scripts", () => {
+  const dir = mkdtempSync(join(tmpdir(), "hoist-delete-"));
+  const store = new Store(dir);
+  try {
+    const external = join(dir, "shared.sh");
+    writeFileSync(external, "echo shared");
+    store.setProject({ ...project, script: external });
+    store.setProject({ ...project, id: "other", script: external });
+    const base = join(store.dir, "projects", project.id);
+    writeFileSync(join(base, "deploy.sh"), "echo managed");
+    writeFileSync(join(base, "artifacts", "ready.bin"), "release");
+    writeFileSync(join(base, "logs", "done.log"), "done");
+    store.addArtifact(project.id, artifact("ready"));
+    store.addDeployment(project.id, {
+      ...deployment("done", "ready"),
+      status: "succeeded",
+    });
+    const shared = join(dir, "shared");
+    mkdirSync(shared);
+    writeFileSync(join(shared, "keep.txt"), "keep");
+    symlinkSync(
+      shared,
+      join(base, "shared-link"),
+      process.platform === "win32" ? "junction" : "dir",
+    );
+    expect(storedArtifactBytes(store.dir)).toBe(7);
+    store.removeProject(project.id);
+    expect(store.getProjects(true).map((p) => p.id)).toEqual(["other"]);
+    expect(store.getState(project.id)).toEqual({
+      artifacts: [],
+      deployments: [],
+    });
+    expect(existsSync(base)).toBe(false);
+    expect(existsSync(join(store.dir, "projects", "other"))).toBe(true);
+    expect(existsSync(external)).toBe(true);
+    expect(existsSync(join(shared, "keep.txt"))).toBe(true);
+    expect(storedArtifactBytes(store.dir)).toBe(0);
+    store.recover();
+    expect(existsSync(base)).toBe(false);
+    store.setProject(project);
+    expect(store.getState(project.id)).toEqual({
+      artifacts: [],
+      deployments: [],
+    });
+  } finally {
+    store.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("failed file deletion rolls back metadata and can be retried", () => {
+  const dir = mkdtempSync(join(tmpdir(), "hoist-delete-failed-"));
+  const store = new Store(dir);
+  let remove: ReturnType<typeof spyOn> | undefined;
+  try {
+    store.setProject(project);
+    store.addArtifact(project.id, artifact("ready"));
+    store.addDeployment(project.id, deployment("running", "ready"));
+    remove = spyOn(fs, "rmSync").mockImplementation(() => {
+      throw new Error("File locked");
+    });
+    expect(() => store.removeProject(project.id)).toThrow("File locked");
+    expect(store.getProject(project.id)).toEqual(project);
+    expect(store.getState(project.id).artifacts).toHaveLength(1);
+    expect(store.getState(project.id).deployments).toHaveLength(1);
+    remove.mockRestore();
+    store.removeProject(project.id);
+    expect(store.getProjects(true)).toEqual([]);
+    expect(existsSync(join(store.dir, "projects", project.id))).toBe(false);
+  } finally {
+    remove?.mockRestore();
+    store.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("project deletion rejects path traversal and linked project directories", () => {
+  const dir = mkdtempSync(join(tmpdir(), "hoist-delete-path-"));
+  const store = new Store(join(dir, "data"));
+  try {
+    store.setProject(project);
+    expect(() => store.removeProject("../outside")).toThrow("Invalid project");
+    const outside = join(dir, "outside");
+    mkdirSync(outside);
+    writeFileSync(join(outside, "keep.txt"), "keep");
+    const base = join(store.dir, "projects", project.id);
+    rmSync(base, { recursive: true });
+    symlinkSync(
+      outside,
+      base,
+      process.platform === "win32" ? "junction" : "dir",
+    );
+    expect(() => store.removeProject(project.id)).toThrow("real directory");
+    expect(store.getProject(project.id)).toEqual(project);
+    expect(existsSync(join(outside, "keep.txt"))).toBe(true);
   } finally {
     store.close();
     rmSync(dir, { recursive: true, force: true });

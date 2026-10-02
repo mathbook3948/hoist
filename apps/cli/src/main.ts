@@ -150,7 +150,7 @@ export async function main(argv: string[], developmentDataDir?: string) {
       }
       if (action === "remove") {
         store.removeProject(id);
-        console.log(`Project unregistered: ${id} (data retained)`);
+        console.log(`Project deleted: ${id}`);
         return;
       }
     }

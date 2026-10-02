@@ -118,7 +118,7 @@ export function startServer(store: Store, settings: Settings = readSettings()) {
             });
           if (method === "DELETE") {
             projects.remove(projectMatch[1]);
-            return json({ ok: true, dataRetained: true });
+            return json({ ok: true });
           }
         }
         const match = path.match(
