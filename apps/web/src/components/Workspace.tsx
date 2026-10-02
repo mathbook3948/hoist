@@ -1,64 +1,56 @@
 import type { Console } from "../console";
-import { byNewest, formatDate, formatDuration } from "../display";
+import { byNewest, formatDate, formatDuration, formatSize } from "../display";
 import { ProjectManagement } from "./ProjectManagement";
 import { DeployForm } from "./DeployForm";
 import { Logs } from "./Logs";
 import { Button } from "./ui/button";
 import { Card, CardHeader, CardTitle, CardContent } from "./ui/card";
 import { Badge } from "./ui/badge";
-import { Separator } from "./ui/separator";
+
 import { StatusBadge } from "./StatusBadge";
-import { LogOut } from "lucide-react";
+import { ArrowLeft, LogOut } from "lucide-react";
+import { DataTable } from "./DataTable";
 
 export function Workspace({ app }: { app: Console }) {
   const { state, project } = app;
   const deployments = byNewest(project?.deployments || [], "startedAt");
   const latest = deployments[0];
   return (
-    <div className="min-h-svh md:grid md:grid-cols-[220px_minmax(0,1fr)]">
-      <aside className="flex flex-col border-b bg-muted/20 p-4 md:sticky md:top-0 md:h-svh md:border-r md:border-b-0">
-        <div className="mb-4 flex items-center justify-between px-2 text-sm font-medium">
-          프로젝트<Badge variant="secondary">{state.projects.length}</Badge>
-        </div>
-        <nav
-          className="flex gap-1 overflow-x-auto md:flex-1 md:flex-col"
-          aria-label="프로젝트 선택"
-        >
-          {state.projects.map((p) => (
-            <Button
-              key={p.id}
-              variant={p.id === state.projectId ? "secondary" : "ghost"}
-              className="justify-start md:w-full"
-              aria-current={p.id === state.projectId ? "page" : undefined}
-              disabled={Boolean(state.busy)}
-              onClick={() => void app.selectProject(p.id)}
-            >
-              <span className="truncate">{p.name}</span>
-            </Button>
-          ))}
-        </nav>
-        <Separator className="my-4" />
-        <div className="flex items-center justify-between gap-2 px-2">
-          <span className="truncate text-sm text-muted-foreground">
-            {state.user}
-          </span>
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label="로그아웃"
-            disabled={Boolean(state.busy)}
-            onClick={() => void app.logout()}
-          >
-            <LogOut />
-          </Button>
-        </div>
-      </aside>
+    <div className="min-h-svh">
       <main className="mx-auto w-full max-w-7xl min-w-0 space-y-6 p-4 md:p-8">
         <header className="flex flex-wrap items-center justify-between gap-4">
           <div className="min-w-0 space-y-2">
-            <h1 className="truncate text-2xl font-semibold tracking-tight">
-              {project?.name || "프로젝트"}
-            </h1>
+            <div className="flex min-w-0 items-center gap-2">
+              {state.projectId && (
+                <Button asChild variant="ghost" size="icon">
+                  <a
+                    href="/"
+                    aria-label="프로젝트 목록"
+                    title="목록으로"
+                    onClick={(e) => {
+                      if (
+                        e.button === 0 &&
+                        !e.ctrlKey &&
+                        !e.metaKey &&
+                        !e.shiftKey &&
+                        !e.altKey
+                      ) {
+                        e.preventDefault();
+                        app.selectProject(null);
+                      }
+                    }}
+                  >
+                    <ArrowLeft aria-hidden="true" />
+                  </a>
+                </Button>
+              )}
+              <h1 className="truncate text-2xl font-semibold tracking-tight">
+                {project?.name ||
+                  (state.projectId
+                    ? "프로젝트를 찾을 수 없습니다"
+                    : "프로젝트")}
+              </h1>
+            </div>
             {project && (
               <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
                 <StatusBadge
@@ -69,13 +61,112 @@ export function Workspace({ app }: { app: Console }) {
               </div>
             )}
           </div>
-          {project && <DeployForm key={project.id} app={app} />}
+          <div className="flex flex-wrap items-center gap-3">
+            {(!state.projectId || project) && (
+              <ProjectManagement
+                key={`management-${state.projectId || "list"}`}
+                app={app}
+              />
+            )}
+            {project && <DeployForm key={project.id} app={app} />}
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label="로그아웃"
+              title={`${state.user} · 로그아웃`}
+              disabled={Boolean(state.busy)}
+              onClick={() => void app.logout()}
+            >
+              <LogOut aria-hidden="true" />
+            </Button>
+          </div>
         </header>
-        <ProjectManagement app={app} />
-        {!project ? (
+        {state.loadingProjects ? (
+          <p className="text-sm text-muted-foreground">
+            프로젝트를 불러오는 중…
+          </p>
+        ) : !state.projectId ? (
+          <DataTable
+            label="프로젝트 목록"
+            className="min-w-5xl"
+            rows={state.projects.map((p) => ({
+              ...p,
+              recent: byNewest(p.deployments, "startedAt")[0],
+            }))}
+            rowKey={(p) => p.id}
+            onRowClick={(p) => app.selectProject(p.id)}
+            disabled={Boolean(state.busy)}
+            emptyMessage="아직 프로젝트가 없습니다"
+            columns={[
+              {
+                id: "name",
+                header: "이름",
+                className: "w-60",
+                cell: (p) => (
+                  <a
+                    href={`/${encodeURIComponent(p.id)}`}
+                    title={p.name}
+                    className="inline-block max-w-full truncate rounded-sm font-medium underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-ring"
+                    onClick={(e) => {
+                      if (
+                        e.button === 0 &&
+                        !e.ctrlKey &&
+                        !e.metaKey &&
+                        !e.shiftKey &&
+                        !e.altKey
+                      ) {
+                        e.preventDefault();
+                        app.selectProject(p.id);
+                      }
+                    }}
+                  >
+                    {p.name}
+                  </a>
+                ),
+              },
+              {
+                id: "version",
+                header: "최근 버전",
+                cell: (p) => (
+                  <span className="block truncate">
+                    {p.recent?.version || "—"}
+                  </span>
+                ),
+              },
+              {
+                id: "status",
+                header: "배포 상태",
+                cell: (p) => (
+                  <StatusBadge
+                    status={p.running ? "running" : p.recent?.status}
+                  />
+                ),
+              },
+              {
+                id: "duration",
+                header: "소요 시간",
+                className: "tabular-nums",
+                cell: (p) => (p.recent ? formatDuration(p.recent) : "—"),
+              },
+              {
+                id: "storage",
+                header: "보관 용량",
+                className: "tabular-nums",
+                cell: (p) =>
+                  formatSize(p.artifacts.reduce((sum, a) => sum + a.size, 0)),
+              },
+              {
+                id: "started",
+                header: "최근 배포 시각",
+                className: "tabular-nums",
+                cell: (p) => (p.recent ? formatDate(p.recent.startedAt) : "—"),
+              },
+            ]}
+          />
+        ) : !project ? (
           <Card>
             <CardContent className="py-10 text-center text-sm text-muted-foreground">
-              아직 프로젝트가 없습니다
+              존재하지 않거나 등록 해제된 프로젝트입니다.
             </CardContent>
           </Card>
         ) : (
@@ -86,57 +177,61 @@ export function Workspace({ app }: { app: Console }) {
                 <Badge variant="secondary">{deployments.length}</Badge>
               </CardHeader>
               <CardContent>
-                {!deployments.length ? (
-                  <p className="py-10 text-center text-sm text-muted-foreground">
-                    배포 이력이 없습니다. 새 배포에서 파일과 버전을 선택하세요.
-                  </p>
-                ) : (
-                  <div
-                    className="space-y-1"
-                    role="group"
-                    aria-label="배포 이력"
-                  >
-                    <div
-                      className="hidden grid-cols-[minmax(0,1fr)_100px_minmax(0,1fr)_150px_100px] gap-4 border-b px-3 pb-3 text-xs text-muted-foreground lg:grid"
-                      aria-hidden="true"
-                    >
-                      <span>버전</span>
-                      <span>상태</span>
-                      <span>배포 파일</span>
-                      <span>시작 시각</span>
-                      <span>소요 시간</span>
-                    </div>
-                    {deployments.map((d) => (
-                      <Button
-                        key={d.id}
-                        variant={
-                          d.id === state.deploymentId ? "secondary" : "ghost"
-                        }
-                        className="grid h-auto w-full grid-cols-2 gap-2 p-3 text-left lg:grid-cols-[minmax(0,1fr)_100px_minmax(0,1fr)_150px_100px] lg:gap-4"
-                        aria-pressed={d.id === state.deploymentId}
-                        disabled={Boolean(state.busy)}
-                        onClick={() => app.selectDeployment(d)}
-                      >
-                        <span className="truncate font-medium">
-                          {d.version}
-                        </span>
-                        <span>
-                          <StatusBadge status={d.status} />
-                        </span>
-                        <span className="truncate text-xs text-muted-foreground">
+                <DataTable
+                  label="배포 이력"
+                  rows={deployments}
+                  rowKey={(d) => d.id}
+                  onRowClick={app.selectDeployment}
+                  disabled={Boolean(state.busy)}
+                  selectedKey={state.deploymentId}
+                  emptyMessage="배포 이력이 없습니다. 새 배포에서 파일과 버전을 선택하세요."
+                  columns={[
+                    {
+                      id: "version",
+                      header: "버전",
+                      className: "w-40",
+                      cell: (d) => (
+                        <Button
+                          variant="link"
+                          className="max-w-full justify-start p-0"
+                          aria-pressed={d.id === state.deploymentId}
+                          disabled={Boolean(state.busy)}
+                          onClick={() => app.selectDeployment(d)}
+                        >
+                          <span className="truncate">{d.version}</span>
+                        </Button>
+                      ),
+                    },
+                    {
+                      id: "status",
+                      header: "상태",
+                      className: "w-28",
+                      cell: (d) => <StatusBadge status={d.status} />,
+                    },
+                    {
+                      id: "artifact",
+                      header: "배포 파일",
+                      cell: (d) => (
+                        <span className="block truncate">
                           {project.artifacts.find((a) => a.id === d.artifactId)
                             ?.name || "보관 종료된 파일"}
                         </span>
-                        <span className="text-xs text-muted-foreground">
-                          {formatDate(d.startedAt)}
-                        </span>
-                        <span className="text-xs text-muted-foreground">
-                          {formatDuration(d)}
-                        </span>
-                      </Button>
-                    ))}
-                  </div>
-                )}
+                      ),
+                    },
+                    {
+                      id: "started",
+                      header: "시작 시각",
+                      className: "w-44 tabular-nums",
+                      cell: (d) => formatDate(d.startedAt),
+                    },
+                    {
+                      id: "duration",
+                      header: "소요 시간",
+                      className: "w-28 tabular-nums",
+                      cell: (d) => formatDuration(d),
+                    },
+                  ]}
+                />
               </CardContent>
             </Card>
             <Logs app={app} />

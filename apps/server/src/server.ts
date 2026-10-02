@@ -48,8 +48,13 @@ export function startServer(store: Store, settings: Settings = readSettings()) {
           fail(403, "Host rejected");
         const path = url.pathname;
         const method = req.method;
-        const staticFile = staticFiles.get(path);
-        if (method === "GET" && path === "/" && !staticFile)
+        const appPage =
+          path === "/" ||
+          (/^\/[a-zA-Z0-9_-]{1,64}$/.test(path) &&
+            path !== "/api" &&
+            path !== "/assets");
+        const staticFile = staticFiles.get(appPage ? "/" : path);
+        if (method === "GET" && appPage && !staticFile)
           fail(
             503,
             "Web build missing. Run bun run build:web, or open the Vite development server.",
@@ -58,14 +63,13 @@ export function startServer(store: Store, settings: Settings = readSettings()) {
           return new Response(Bun.file(staticFile), {
             headers: {
               ...security,
-              "Content-Type":
-                path === "/"
-                  ? "text/html; charset=utf-8"
-                  : path.endsWith(".js")
-                    ? "text/javascript; charset=utf-8"
-                    : path.endsWith(".css")
-                      ? "text/css; charset=utf-8"
-                      : Bun.file(staticFile).type || "application/octet-stream",
+              "Content-Type": appPage
+                ? "text/html; charset=utf-8"
+                : path.endsWith(".js")
+                  ? "text/javascript; charset=utf-8"
+                  : path.endsWith(".css")
+                    ? "text/css; charset=utf-8"
+                    : Bun.file(staticFile).type || "application/octet-stream",
             },
           });
         if (path === "/api/login" && method === "POST")

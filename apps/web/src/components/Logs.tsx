@@ -26,7 +26,6 @@ export function Logs({ app }: { app: Console }) {
           <Button
             id="cancel-button"
             variant="destructive"
-            size="sm"
             disabled={Boolean(state.busy || state.loadingLog)}
             onClick={() => void app.cancel()}
           >

@@ -143,7 +143,6 @@ export function DeployForm({ app }: { app: Console }) {
               <Button
                 id="upload-button"
                 variant="outline"
-                size="sm"
                 type="submit"
                 disabled={disabled || !state.file || oversized}
               >

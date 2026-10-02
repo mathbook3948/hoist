@@ -20,6 +20,7 @@ type Listing = {
   managementBusy: boolean;
 };
 type State = {
+  loadingProjects: boolean;
   booting: boolean;
   user: string | null;
   csrf: string;
@@ -42,12 +43,15 @@ type State = {
   refresh: number;
   visible: boolean;
 };
+const routeProject = () =>
+  window.location.pathname === "/" ? null : window.location.pathname.slice(1);
 const initial = (): State => ({
+  loadingProjects: true,
   booting: true,
   user: null,
   csrf: "",
   projects: [],
-  projectId: null,
+  projectId: routeProject(),
   deploymentId: null,
   deployment: null,
   limits: null,
@@ -86,6 +90,7 @@ export function useConsole() {
   const current = useRef(state);
   const session = useRef(0);
   const mounted = useRef(false);
+  const navigation = useRef(0);
   const update = useCallback((patch: Partial<State>) => {
     if (!mounted.current) return;
     current.current = { ...current.current, ...patch };
@@ -136,14 +141,16 @@ export function useConsole() {
     [clearSession],
   );
   const loadProjects = useCallback(
-    async (preferred?: string | null, preserve = true) => {
+    async (preserve = true) => {
       const epoch = session.current;
-      const result = await request<Listing>("/api/projects");
+      const result = await request<Listing>("/api/projects").catch((error) => {
+        if (epoch === session.current) update({ loadingProjects: false });
+        throw error;
+      });
       if (epoch !== session.current || !mounted.current) return;
       const before = current.current;
-      const selectedId = preferred === undefined ? before.projectId : preferred;
-      const project =
-        result.projects.find((p) => p.id === selectedId) || result.projects[0];
+      const selectedId = routeProject();
+      const project = result.projects.find((p) => p.id === selectedId);
       const same = preserve && project?.id === before.projectId;
       const deployments = byNewest(project?.deployments || [], "startedAt");
       const deployment =
@@ -153,11 +160,12 @@ export function useConsole() {
         null;
       const artifacts = byNewest(project?.artifacts || [], "createdAt");
       update({
+        loadingProjects: false,
         projects: result.projects,
         limits: result.limits,
         serverBusy: result.uploading,
         managementBusy: result.managementBusy,
-        projectId: project?.id || null,
+        projectId: selectedId,
         deploymentId: deployment?.id || null,
         deployment,
         artifactId:
@@ -171,6 +179,43 @@ export function useConsole() {
     },
     [request, update],
   );
+  const syncRoute = useCallback(() => {
+    update({
+      projectId: routeProject(),
+      deploymentId: null,
+      deployment: null,
+      file: null,
+      version: "",
+      artifactId: "",
+      log: initial().log,
+      loadingLog: false,
+      loadingProjects: true,
+    });
+  }, [update]);
+  const navigate = (id: string | null, replace = false) => {
+    window.history[replace ? "replaceState" : "pushState"](
+      {},
+      "",
+      id ? `/${encodeURIComponent(id)}` : "/",
+    );
+    syncRoute();
+  };
+  useEffect(() => {
+    const pop = () => {
+      navigation.current++;
+      syncRoute();
+      if (current.current.user)
+        void loadProjects(false).catch((error) =>
+          update({
+            loadingProjects: false,
+            notice: describe(error),
+            noticeError: true,
+          }),
+        );
+    };
+    window.addEventListener("popstate", pop);
+    return () => window.removeEventListener("popstate", pop);
+  }, [syncRoute, loadProjects, update]);
   const startSession = useCallback(async () => {
     const epoch = session.current;
     const me = await request<{ username: string; csrf: string }>("/api/me");
@@ -228,6 +273,8 @@ export function useConsole() {
         if (
           disposed ||
           activeController.signal.aborted ||
+          current.current.projectId !== projectId ||
+          current.current.deploymentId !== deploymentId ||
           !current.current.user
         )
           return;
@@ -305,16 +352,25 @@ export function useConsole() {
   ) {
     if (current.current.busy) return false;
     const epoch = session.current;
-    const valid = () => mounted.current && epoch === session.current;
+    const routeEpoch = navigation.current;
+    const valid = () =>
+      mounted.current &&
+      epoch === session.current &&
+      routeEpoch === navigation.current;
     update({ busy: name, notice: "", noticeError: false });
     try {
       await work(valid);
       return valid();
     } catch (error) {
-      if (valid()) update({ notice: describe(error), noticeError: true });
+      if (valid())
+        update({
+          loadingProjects: false,
+          notice: describe(error),
+          noticeError: true,
+        });
       return false;
     } finally {
-      if (valid()) update({ busy: null });
+      if (mounted.current && epoch === session.current) update({ busy: null });
     }
   }
   async function login(username: string, password: string) {
@@ -360,11 +416,15 @@ export function useConsole() {
         await request("/api/logout", { method: "POST" });
         if (valid()) clearSession();
       }),
-    selectProject: (id: string) =>
-      action("select", async (valid) => {
-        await loadProjects(id, false);
+    selectProject: (id: string | null) => {
+      if (current.current.busy) return;
+      navigation.current++;
+      navigate(id);
+      return action("select", async (valid) => {
+        await loadProjects(false);
         if (valid()) update({ refresh: current.current.refresh + 1 });
-      }),
+      });
+    },
     selectDeployment: (deployment: Deployment) => {
       if (!current.current.busy)
         update({
@@ -459,7 +519,8 @@ export function useConsole() {
           { method: editingId ? "PUT" : "POST", json: input },
         );
         if (!valid()) return;
-        await loadProjects(result.project.id, false);
+        if (!editingId) navigate(result.project.id);
+        await loadProjects(false);
         if (valid())
           update({
             notice: editingId
@@ -473,7 +534,8 @@ export function useConsole() {
           method: "DELETE",
         });
         if (!valid()) return;
-        await loadProjects(null, false);
+        navigate(null, true);
+        await loadProjects(false);
         if (valid())
           update({
             notice:

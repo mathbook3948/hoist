@@ -9,6 +9,7 @@ import {
 import userEvent from "@testing-library/user-event";
 import { describe, expect, test, vi } from "vitest";
 import { App } from "../src/App";
+import { DataTable } from "../src/components/DataTable";
 import type { ProjectView } from "../src/console";
 
 const artifact = {
@@ -38,7 +39,12 @@ const json = (body: unknown, status = 200) =>
     status,
     headers: { "Content-Type": "application/json" },
   });
-function fixture(authenticated = true, initialProjects = [demo()]) {
+function fixture(
+  authenticated = true,
+  initialProjects = [demo()],
+  path = initialProjects.length ? "/demo" : "/",
+) {
+  window.history.replaceState({}, "", path);
   const data = {
     authenticated,
     projects: initialProjects,
@@ -150,6 +156,97 @@ const callsTo = (
 ) => fetcher.mock.calls.filter(([path]) => String(path).endsWith(suffix));
 
 describe("React deployment console", () => {
+  test("table rows activate once, preserve keyboard buttons and block busy clicks", async () => {
+    const user = userEvent.setup();
+    const select = vi.fn();
+    const row = { id: "one" };
+    const props = {
+      label: "Rows",
+      rows: [row],
+      rowKey: (item: typeof row) => item.id,
+      emptyMessage: "Empty",
+      onRowClick: select,
+      columns: [
+        {
+          id: "name",
+          header: "Name",
+          cell: () => (
+            <button onClick={() => select(row)}>
+              <span>Open</span>
+            </button>
+          ),
+        },
+        { id: "status", header: "Status", cell: () => "Done" },
+      ],
+    };
+    const view = render(<DataTable {...props} />);
+    await user.click(screen.getByRole("cell", { name: "Done" }));
+    expect(select).toHaveBeenCalledExactlyOnceWith(row);
+    select.mockClear();
+    await user.click(screen.getByText("Open"));
+    expect(select).toHaveBeenCalledExactlyOnceWith(row);
+    select.mockClear();
+    await user.keyboard("{Enter}");
+    expect(select).toHaveBeenCalledExactlyOnceWith(row);
+    select.mockClear();
+    view.rerender(<DataTable {...props} disabled />);
+    await user.click(screen.getByRole("cell", { name: "Done" }));
+    expect(select).not.toHaveBeenCalled();
+  });
+  test("home lists projects without a sidebar and navigation follows browser history", async () => {
+    const { user } = fixture(true, [demo()], "/");
+    const link = await screen.findByRole("link", { name: /Demo/ });
+    const table = screen.getByRole("table", { name: "프로젝트 목록" });
+    expect(
+      within(table)
+        .getAllByRole("columnheader")
+        .map((cell) => cell.textContent),
+    ).toEqual([
+      "이름",
+      "최근 버전",
+      "배포 상태",
+      "소요 시간",
+      "보관 용량",
+      "최근 배포 시각",
+    ]);
+    expect(
+      within(table).getByRole("cell", { name: "1.0 KiB" }),
+    ).toBeInTheDocument();
+    expect(link).toHaveAttribute("href", "/demo");
+    expect(screen.queryByLabelText("배포 실행 로그")).toBeNull();
+    expect(document.querySelector("aside")).toBeNull();
+    expect(screen.getByRole("button", { name: "등록" })).toBeInTheDocument();
+    await user.click(within(table).getAllByRole("cell")[1]);
+    await ready();
+    expect(window.location.pathname).toBe("/demo");
+    expect(
+      screen.queryByRole("button", { name: "등록", exact: true }),
+    ).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "설정", exact: true }),
+    ).toBeInTheDocument();
+    await act(async () => {
+      window.history.back();
+      await new Promise((r) => setTimeout(r, 30));
+    });
+    await screen.findByRole("link", { name: /Demo/ });
+    expect(window.location.pathname).toBe("/");
+    await act(async () => {
+      window.history.forward();
+      await new Promise((r) => setTimeout(r, 30));
+    });
+    await ready();
+    expect(window.location.pathname).toBe("/demo");
+  });
+  test("unknown project URL never silently selects another project", async () => {
+    fixture(true, [demo()], "/missing");
+    await screen.findByText("존재하지 않거나 등록 해제된 프로젝트입니다.");
+    expect(window.location.pathname).toBe("/missing");
+    expect(
+      screen.queryByRole("button", { name: "등록", exact: true }),
+    ).toBeNull();
+    expect(screen.queryByLabelText("배포 실행 로그")).toBeNull();
+  });
   test("history leads the detail view and exposes deployment metadata", async () => {
     const project = demo();
     project.deployments = [
@@ -166,7 +263,8 @@ describe("React deployment console", () => {
         ? json({ deployment: project.deployments[0], log: "done" })
         : undefined;
     await ready();
-    const history = screen.getByRole("group", { name: "배포 이력" });
+    const history = screen.getByRole("table", { name: "배포 이력" });
+    expect(within(history).getAllByRole("columnheader")).toHaveLength(5);
     expect(history).toHaveTextContent("release.tar");
     expect(history).toHaveTextContent("1분 5초");
     expect(
@@ -174,6 +272,39 @@ describe("React deployment console", () => {
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
     expect(screen.queryByLabelText("배포 파일 업로드")).toBeNull();
+  });
+  test("clicking deployment metadata selects that row and loads its logs", async () => {
+    const project = demo();
+    project.deployments = [
+      { ...deployment, status: "succeeded", startedAt: "2026-01-02" },
+      { ...deployment, id: "d2", version: "v0", status: "failed" },
+    ];
+    const { data, fetcher, user } = fixture(true, [project]);
+    data.intercept = (path) => {
+      const selected = project.deployments.find((d) =>
+        path.endsWith(`/deployments/${d.id}`),
+      );
+      return selected
+        ? json({ deployment: selected, log: `log ${selected.version}` })
+        : undefined;
+    };
+    await ready();
+    await waitFor(() =>
+      expect(screen.getByLabelText("배포 실행 로그")).toHaveTextContent(
+        "log v1",
+      ),
+    );
+    const row = screen
+      .getByRole("button", { name: "v0", exact: true })
+      .closest("tr")!;
+    await user.click(within(row).getByRole("cell", { name: "release.tar" }));
+    await waitFor(() =>
+      expect(screen.getByLabelText("배포 실행 로그")).toHaveTextContent(
+        "log v0",
+      ),
+    );
+    expect(row).toHaveAttribute("data-state", "selected");
+    expect(callsTo(fetcher, "/deployments/d2")).toHaveLength(1);
   });
   test("a project request failure after login is visible", async () => {
     const { data, user } = fixture(false);
@@ -392,11 +523,8 @@ describe("React deployment console", () => {
     await waitFor(() =>
       expect(callsTo(fetcher, "/deployments/d1")).toHaveLength(1),
     );
-    await user.click(
-      within(
-        screen.getByRole("navigation", { name: "프로젝트 선택" }),
-      ).getByRole("button", { name: "Second" }),
-    );
+    await user.click(screen.getByRole("link", { name: "프로젝트 목록" }));
+    await user.click(await screen.findByRole("link", { name: /Second/ }));
     await screen.findByRole("heading", { name: "Second", level: 1 });
     await act(async () => release(json({ deployment, log: "stale response" })));
     expect(screen.getByLabelText("배포 실행 로그")).not.toHaveTextContent(
@@ -407,6 +535,11 @@ describe("React deployment console", () => {
   test("an empty workspace supports project registration and editing", async () => {
     const { fetcher, user } = fixture(true, []);
     await screen.findByText("아직 프로젝트가 없습니다");
+    expect(
+      within(screen.getByRole("table", { name: "프로젝트 목록" })).getByRole(
+        "cell",
+      ),
+    ).toHaveAttribute("colspan", "6");
     await user.click(screen.getByRole("button", { name: "등록" }));
     expect(screen.queryByLabelText("프로젝트 ID")).toBeNull();
     await user.type(screen.getByLabelText("프로젝트 이름"), "New project");
@@ -417,6 +550,7 @@ describe("React deployment console", () => {
     );
     await user.click(screen.getByRole("button", { name: "저장" }));
     await screen.findByRole("heading", { name: "New project", level: 1 });
+    expect(window.location.pathname).toBe("/generated-id");
     expect(
       await screen.findByText("프로젝트를 등록했어요", {
         selector: "[data-title]",
@@ -448,7 +582,7 @@ describe("React deployment console", () => {
       ),
     ).toBe(true);
   });
-  test("project removal requires confirmation and selects the next project", async () => {
+  test("project removal requires confirmation and returns to the project list", async () => {
     const { fetcher, user } = fixture(true, [
       demo(),
       { ...demo(), id: "second", name: "Second" },
@@ -465,7 +599,8 @@ describe("React deployment console", () => {
         screen.getByRole("alertdialog", { name: "프로젝트 등록 해제 확인" }),
       ).getByRole("button", { name: "등록 해제" }),
     );
-    await screen.findByRole("heading", { name: "Second", level: 1 });
+    await screen.findByRole("link", { name: /Second/ });
+    expect(window.location.pathname).toBe("/");
   });
   test("scripts load only when editing, and failed reads cannot overwrite the file", async () => {
     const { data, fetcher, user } = fixture();
@@ -507,11 +642,7 @@ describe("React deployment console", () => {
     expect(screen.getByLabelText("프로젝트 이름")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "닫기" }));
     data.managementBusy = true;
-    await user.click(
-      within(
-        screen.getByRole("navigation", { name: "프로젝트 선택" }),
-      ).getByRole("button", { name: "Demo" }),
-    );
+    await user.click(screen.getByRole("link", { name: "프로젝트 목록" }));
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "등록" })).toBeDisabled(),
     );
@@ -543,11 +674,7 @@ describe("React deployment console", () => {
     const { data, user } = fixture();
     await ready();
     data.authenticated = false;
-    await user.click(
-      within(
-        screen.getByRole("navigation", { name: "프로젝트 선택" }),
-      ).getByRole("button", { name: "Demo" }),
-    );
+    await user.click(screen.getByRole("link", { name: "프로젝트 목록" }));
     await screen.findByRole("heading", { name: "로그인" });
     expect(screen.getByRole("alert")).toHaveTextContent("세션이 만료");
   });

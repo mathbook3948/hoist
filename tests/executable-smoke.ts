@@ -102,6 +102,17 @@ try {
     await Bun.sleep(50);
   }
   assert.ok(ready, "Compiled server did not become ready");
+  const detailPage = await fetch(origin + "/example-project");
+  assert.equal(detailPage.status, 200);
+  assert.match(detailPage.headers.get("content-type") || "", /text\/html/);
+  assert.equal(
+    await detailPage.text(),
+    await Bun.file(join(root, "apps/web/dist/index.html")).text(),
+  );
+  assert.notEqual(
+    (await fetch(origin + "/api/unknown")).headers.get("content-type"),
+    "text/html; charset=utf-8",
+  );
   const webDist = join(root, "apps/web/dist");
   const files = readdirSync(webDist, { recursive: true, withFileTypes: true })
     .filter((entry) => entry.isFile())

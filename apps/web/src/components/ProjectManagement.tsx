@@ -129,53 +129,54 @@ export function ProjectManagement({ app }: { app: Console }) {
       aria-label="프로젝트 관리"
       className="flex flex-wrap items-center justify-between gap-3"
     >
-      <p className="text-sm text-muted-foreground">
-        {app.managementBusy
-          ? "업로드·배포 중에는 프로젝트 설정을 변경할 수 없습니다"
-          : "프로젝트 관리"}
-      </p>
       <div className="flex flex-wrap gap-2">
-        <Button
-          ref={addButton}
-          id="project-add-button"
-          variant="outline"
-          size="icon-sm"
-          aria-label="등록"
-          title="프로젝트 등록"
-          disabled={app.managementBusy}
-          onClick={() => open()}
-        >
-          <Plus aria-hidden="true" />
-        </Button>
-        <Button
-          ref={editButton}
-          id="project-edit-button"
-          variant="outline"
-          size="icon-sm"
-          aria-label="설정"
-          title="프로젝트 설정"
-          disabled={app.managementBusy || !app.project}
-          onClick={() => open(app.project)}
-        >
-          <Settings aria-hidden="true" />
-        </Button>
-        <Button
-          ref={removeButton}
-          id="project-remove-button"
-          variant="ghost"
-          size="icon-sm"
-          aria-label="등록 해제"
-          title="프로젝트 등록 해제"
-          className="text-destructive hover:text-destructive"
-          disabled={app.managementBusy || !app.project}
-          onClick={() => {
-            app.update({ notice: "" });
-            setEditor(null);
-            setRemoving(app.project || null);
-          }}
-        >
-          <Archive aria-hidden="true" />
-        </Button>
+        {!app.state.projectId && (
+          <Button
+            ref={addButton}
+            id="project-add-button"
+            variant="outline"
+            size="icon"
+            aria-label="등록"
+            title="프로젝트 등록"
+            disabled={app.managementBusy}
+            onClick={() => open()}
+          >
+            <Plus aria-hidden="true" />
+          </Button>
+        )}
+        {app.project && (
+          <>
+            <Button
+              ref={editButton}
+              id="project-edit-button"
+              variant="outline"
+              size="icon"
+              aria-label="설정"
+              title="프로젝트 설정"
+              disabled={app.managementBusy || !app.project}
+              onClick={() => open(app.project)}
+            >
+              <Settings aria-hidden="true" />
+            </Button>
+            <Button
+              ref={removeButton}
+              id="project-remove-button"
+              variant="ghost"
+              size="icon"
+              aria-label="등록 해제"
+              title="프로젝트 등록 해제"
+              className="text-destructive hover:text-destructive"
+              disabled={app.managementBusy || !app.project}
+              onClick={() => {
+                app.update({ notice: "" });
+                setEditor(null);
+                setRemoving(app.project || null);
+              }}
+            >
+              <Archive aria-hidden="true" />
+            </Button>
+          </>
+        )}
       </div>
       <Dialog
         open={Boolean(editor)}
