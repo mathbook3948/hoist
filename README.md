@@ -92,6 +92,16 @@ artifact 경로와 version은 **분리된 argv**입니다. 업로드 파일명�
 
 모든 계정은 동일한 배포 권한을 갖습니다. RBAC, MFA, 감사 로그의 변조 방지, 서명된 artifact, 바이러스 검사, 다중 서버 조정은 구현하지 않았습니다. 신뢰할 수 있는 관리자용 초기 프로토타입이며 공개 서비스용 보안 인증을 받은 제품이 아닙니다.
 
+## 코드 포맷
+
+개발 의존성을 설치한 뒤 Prettier 기본 규칙으로 포맷을 적용합니다.
+
+```bash
+bun install --frozen-lockfile
+bun run format
+bun run format:check
+```
+
 ## 검증
 
 ```bash
