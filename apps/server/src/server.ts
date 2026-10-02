@@ -1,5 +1,7 @@
 import { assetsDir as assets, staticFiles } from "@hoist/web/assets";
-import { Store } from "./store";
+import { Store, validateConfig } from "./store";
+import { isIP } from "node:net";
+import { networkInterfaces } from "node:os";
 import { HTTPError, fail, json, security, smallJSON } from "./http";
 import { createAuth } from "./auth";
 import { createArtifacts } from "./artifacts";
@@ -12,14 +14,38 @@ export function startServer(store: Store, settings: Settings = readSettings()) {
   const isAllowedIP = createIPFilter(settings.allowedIP);
   const resolveClientIP = createClientIPResolver(settings.trustedProxy);
   const dir = store.dir;
-  const config = store.getConfig();
+  const config = {
+    ...store.getConfig(),
+    ...(settings.host !== undefined ? { host: settings.host } : {}),
+  };
+  validateConfig(config);
   store.recover();
   for (const p of store.getProjects(true)) store.trim(p.id, config);
   const origin =
     config.publicOrigin ||
-    `http://${config.host === "::1" ? "[::1]" : config.host}:${config.port}`;
+    `http://${isIP(config.host) === 6 ? `[${config.host}]` : config.host}:${config.port}`;
 
-  const auth = createAuth(store, config, origin);
+  const wildcard =
+    !config.publicOrigin && ["0.0.0.0", "::"].includes(config.host);
+  const allowedHosts = new Set(
+    wildcard
+      ? Object.values(networkInterfaces())
+          .flatMap((addresses) => addresses || [])
+          .filter(
+            ({ address }) =>
+              !address.includes("%") &&
+              (config.host === "::" || isIP(address) === 4),
+          )
+          .map(
+            ({ address }) =>
+              new URL(
+                `http://${isIP(address) === 6 ? `[${address}]` : address}:${config.port}`,
+              ).host,
+          )
+          .concat(new URL(`http://localhost:${config.port}`).host)
+      : [new URL(origin).host],
+  );
+  const auth = createAuth(store, config, wildcard ? null : origin);
   const deployments = createDeployments(store, config, assets);
   const artifacts = createArtifacts(store, config, deployments.isRunning);
   let launching = false;
@@ -43,8 +69,7 @@ export function startServer(store: Store, settings: Settings = readSettings()) {
         if (!isAllowedIP(clientIP)) fail(403, "IP address rejected");
         if (shuttingDown) fail(503, "Shutting down");
         const url = new URL(req.url);
-        const expectedHost = new URL(origin).host;
-        if (req.headers.get("host") !== expectedHost)
+        if (!allowedHosts.has(req.headers.get("host") || ""))
           fail(403, "Host rejected");
         const path = url.pathname;
         const method = req.method;

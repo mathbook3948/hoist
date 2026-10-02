@@ -22,9 +22,10 @@ import {
   type State,
   validId,
   defaultConfig,
-  validateConfig,
 } from "./models";
+import { validateConfig } from "./settings";
 export * from "./models";
+export { validateConfig } from "./settings";
 
 export function initData(input: string) {
   let dir = resolve(input);

@@ -114,7 +114,29 @@ location / {
 
 프록시가 여러 개인 경우 각 프록시는 실제 연결 상대를 전달 목록에 추가해야 하며, Hoist와 사용자 사이의 신뢰할 프록시들이 지정한 `trustedProxy` 대역에 있어야 합니다. 신뢰 대역에 일반 클라이언트나 불특정 호스트를 포함하지 마세요. 프록시 신뢰는 사용자 접근 허용이 아니며 최종 사용자 IP는 항상 `allowedIP`를 통과해야 합니다.
 
-`allowedIP`는 접근 제어만 바꾸며 SQLite의 `host`·`port`·`publicOrigin`을 변경하지 않습니다. 기본 `host=127.0.0.1`은 원격 연결을 받지 않습니다. 현재 외부 바인딩에는 HTTPS `publicOrigin`과 보호된 역방향 프록시가 필요하므로, 이 값만 Tailscale 대역으로 바꿔도 Tailscale 주소로 직접 HTTP 접속이 열리는 것은 아닙니다.
+`allowedIP`는 접근 제어만 바꾸며 SQLite의 `host`·`port`·`publicOrigin`을 변경하지 않습니다. 기본 `host=127.0.0.1`은 원격 연결을 받지 않습니다. `settings.json`의 선택 항목 `host`에 IP 또는 `localhost`를 지정하면 서버 시작 시 SQLite의 바인딩 주소보다 우선 적용하며 DB 값은 변경하지 않습니다. 포트와 `publicOrigin`은 SQLite 설정을 사용합니다.
+
+리버스 프록시 없이 Tailscale로 직접 접속하려면 서버 자신의 Tailscale IP를 `host`에 지정하세요. 다음 IP는 예시이므로 실제 서버 IP로 바꾸세요:
+
+```json
+{
+  "host": "100.80.90.10",
+  "allowedIP": "100.64.0.0/10"
+}
+```
+
+`dataDir`을 생략하면 기본 `~/.hoist/data`를 사용하고, `trustedProxy`를 생략하면 전달 헤더를 신뢰하지 않습니다. 재시작 후 기본 포트에서는 `http://100.80.90.10:3000`으로 접속합니다. 바인딩 주소와 관계없이 직접 HTTP를 지원합니다. Tailscale IPv6를 사용할 때는 `allowedIP`도 해당 IPv6 대역으로 지정하고 URL의 주소를 대괄호로 감싸세요. 기존 DB에 `publicOrigin`이 설정되어 있다면 직접 HTTP 접속 전에 `hoist config set publicOrigin null`로 해제하세요. 서버에 없는 IP를 지정하면 시작에 실패합니다.
+
+모든 IPv4 인터페이스에서 연결을 받으면서 Tailscale 클라이언트만 허용하려면 다음처럼 설정합니다:
+
+```json
+{
+  "host": "0.0.0.0",
+  "allowedIP": "100.64.0.0/10"
+}
+```
+
+`host: "::"`는 IPv6 전체 바인딩입니다. 전체 바인딩에서도 접속 URL은 서버의 실제 IP를 사용하고 접근 제한은 `allowedIP`가 결정합니다. 프록시 없는 전체 바인딩은 서버 시작 시 확인한 로컬 인터페이스 IP와 `localhost`의 Host만 허용하며 로그인·변경 요청의 Origin이 요청 Host와 일치해야 합니다. 서버의 네트워크 주소를 추가하거나 변경하면 재시작하세요. HTTPS `publicOrigin`을 지정한 경우에는 기존처럼 그 주소의 Host·Origin만 허용합니다.
 
 ## 웹 프로젝트 관리
 
@@ -175,7 +197,7 @@ artifact 경로와 version은 **분리된 argv**입니다. 업로드 파일명�
 - 로그인 파서/해시 검증 직렬화, 제한된 JSON body(8 KiB/절대 10초), 파일 streaming 저장(기본 최대 1시간)
 - MIME sniffing/iframe 차단, CSP, no-store; 사용자 출력은 텍스트로 표시
 
-기본 loopback HTTP는 SSH 터널이나 같은 서버의 역방향 프록시 뒤에서 사용합니다. 외부에 직접 노출하지 마세요. 외부 접근이 꼭 필요하면 TLS reverse proxy, 접근 제어/VPN, 요청 크기·연결·시간 제한을 먼저 준비하고 `publicOrigin`을 정확한 HTTPS origin으로 설정하세요. 프록시는 해당 Origin/Host를 보존해야 합니다. HTTPS 설정 시 쿠키에 Secure가 붙습니다. `trustedProxy`를 설정하면 검증한 사용자 IP로 로그인 속도를 제한합니다. 미설정이면 연결 상대인 프록시 IP에 함께 적용됩니다. 네트워크를 직접 바꾸거나 TLS를 구성하는 기능은 없습니다.
+HTTP 직접 접속은 설정한 바인딩 주소와 `allowedIP` 접근 제한을 사용합니다. loopback HTTP는 SSH 터널이나 같은 서버의 역방향 프록시 뒤에서도 사용할 수 있습니다. HTTPS 역방향 프록시를 사용할 때는 `publicOrigin`을 정확한 HTTPS origin으로 설정하고 프록시가 해당 Origin/Host를 보존하도록 구성하세요. HTTPS 설정 시 쿠키에 Secure가 붙습니다. `trustedProxy`를 설정하면 검증한 사용자 IP로 로그인 속도를 제한합니다. 미설정이면 실제 연결 상대 IP에 적용됩니다. 네트워크를 직접 바꾸거나 TLS를 구성하는 기능은 없습니다.
 
 단일 관리자 계정으로 운영합니다. RBAC, MFA, 감사 로그의 변조 방지, 서명된 artifact, 바이러스 검사, 다중 서버 조정은 구현하지 않았습니다. 신뢰할 수 있는 관리자용 초기 프로토타입이며 공개 서비스용 보안 인증을 받은 제품이 아닙니다.
 

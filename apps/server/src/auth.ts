@@ -15,7 +15,11 @@ const sessionToken = (req: Request) =>
 const dummyHash =
   "$2b$12$TSS.fGeGXRFHYIA9/xLE5ODDaSPtSLFK.AxMgCpSQOXrEG0k.tNYu";
 
-export function createAuth(store: Store, config: Config, origin: string) {
+export function createAuth(
+  store: Store,
+  config: Config,
+  origin: string | null,
+) {
   const sessions = new Map<
     string,
     { username: string; csrf: string; expires: number }
@@ -34,7 +38,11 @@ export function createAuth(store: Store, config: Config, origin: string) {
     return s;
   };
   function sameOrigin(req: Request) {
-    if (req.headers.get("origin") !== origin) fail(403, "Origin rejected");
+    if (
+      req.headers.get("origin") !==
+      (origin ?? `http://${req.headers.get("host")}`)
+    )
+      fail(403, "Origin rejected");
   }
   function csrf(req: Request) {
     sameOrigin(req);

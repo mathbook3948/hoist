@@ -8,7 +8,7 @@ import {
 } from "../apps/server/src/network";
 import { readSettings } from "../apps/server/src/settings";
 import { resolveDataDir } from "../apps/server/src/paths";
-import { Store } from "../apps/server/src/store";
+import { Store, defaultConfig, validateConfig } from "../apps/server/src/store";
 import { startServer } from "../apps/server/src/server";
 
 test("default and individual IP rules accept only that address, including mapped IPv4", () => {
@@ -102,8 +102,218 @@ test("settings accept a single allowedIP alongside dataDir and reject invalid po
       writeFileSync(path, JSON.stringify({ trustedProxy }));
       expect(() => readSettings(home)).toThrow("trustedProxy");
     }
+    for (const host of [
+      "0.0.0.0",
+      "::",
+      "100.80.90.10",
+      "fd7a:115c:a1e0::1",
+      "::1",
+      "localhost",
+    ]) {
+      writeFileSync(path, JSON.stringify({ host, allowedIP: "100.64.0.0/10" }));
+      expect(readSettings(home).host).toBe(host);
+    }
+    for (const host of [
+      null,
+      [],
+      123,
+      "",
+      "0.0.0.0/0",
+      "100.80.90.10:3000",
+      " 127.0.0.1",
+      "fe80::1%eth0",
+      "example.com",
+    ]) {
+      writeFileSync(path, JSON.stringify({ host }));
+      expect(() => readSettings(home)).toThrow("host");
+    }
   } finally {
     rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("direct HTTP permits user-selected bind addresses while validating settings", () => {
+  for (const host of [
+    "127.0.0.1",
+    "::1",
+    "localhost",
+    "100.64.0.0",
+    "100.127.255.255",
+    "fd7a:115c:a1e0::1",
+    "0.0.0.0",
+    "::",
+    "192.168.1.1",
+    "100.63.255.255",
+    "100.128.0.0",
+    "fd7a:115c:a1e1::1",
+    "example.com",
+  ])
+    expect(() => validateConfig({ ...defaultConfig, host })).not.toThrow();
+  for (const host of ["", " 127.0.0.1", "bad\0host"])
+    expect(() => validateConfig({ ...defaultConfig, host })).toThrow("host");
+  expect(() =>
+    validateConfig({ ...defaultConfig, publicOrigin: "http://example.com" }),
+  ).toThrow("HTTPS");
+  expect(() =>
+    validateConfig({
+      ...defaultConfig,
+      host: "0.0.0.0",
+      publicOrigin: "https://hoist.example.com",
+    }),
+  ).not.toThrow();
+});
+
+test("wildcard HTTP accepts local interface hosts and preserves same-origin login and CSRF checks", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "hoist-wildcard-http-"));
+  const store = new Store(dir);
+  let runtime: ReturnType<typeof startServer> | undefined;
+  try {
+    const reserve = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch: () => new Response(),
+    });
+    const port = reserve.port;
+    await reserve.stop(true);
+    store.setConfig({ ...store.getConfig(), port });
+    store.setAccount({
+      username: "admin",
+      passwordHash: await Bun.password.hash("synthetic-wildcard-password", {
+        algorithm: "bcrypt",
+        cost: 4,
+      }),
+    });
+    runtime = startServer(store, { host: "0.0.0.0", allowedIP: "127.0.0.1" });
+    const origin = `http://127.0.0.1:${port}`;
+    const otherOrigin = `http://localhost:${port}`;
+    expect((await fetch(origin + "/api/me")).status).toBe(401);
+    expect((await fetch(otherOrigin + "/api/me")).status).toBe(401);
+    expect(
+      (
+        await fetch(origin + "/api/me", {
+          headers: { Host: `evil.example:${port}` },
+        })
+      ).status,
+    ).toBe(403);
+    const login = (urlOrigin: string, requestOrigin = urlOrigin) =>
+      fetch(urlOrigin + "/api/login", {
+        method: "POST",
+        headers: { Origin: requestOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          username: "admin",
+          password: "synthetic-wildcard-password",
+        }),
+      });
+    expect((await login(origin, otherOrigin)).status).toBe(403);
+    expect((await login(origin, "http://evil.example")).status).toBe(403);
+    for (const urlOrigin of [origin, otherOrigin]) {
+      const response = await login(urlOrigin);
+      expect(response.status).toBe(200);
+      const cookie = response.headers.get("set-cookie")!.split(";")[0];
+      const { csrf } = (await (
+        await fetch(urlOrigin + "/api/me", { headers: { Cookie: cookie } })
+      ).json()) as { csrf: string };
+      expect(
+        (
+          await fetch(urlOrigin + "/api/logout", {
+            method: "POST",
+            headers: {
+              Cookie: cookie,
+              Origin: urlOrigin,
+              "X-CSRF-Token": "wrong",
+            },
+          })
+        ).status,
+      ).toBe(403);
+      expect(
+        (
+          await fetch(urlOrigin + "/api/logout", {
+            method: "POST",
+            headers: {
+              Cookie: cookie,
+              Origin: "http://evil.example",
+              "X-CSRF-Token": csrf,
+            },
+          })
+        ).status,
+      ).toBe(403);
+      expect(
+        (
+          await fetch(urlOrigin + "/api/logout", {
+            method: "POST",
+            headers: {
+              Cookie: cookie,
+              Origin: urlOrigin,
+              "X-CSRF-Token": csrf,
+            },
+          })
+        ).status,
+      ).toBe(200);
+    }
+  } finally {
+    await runtime?.stop();
+    store.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("settings host overrides the bind and login origin without rewriting the database", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "hoist-bind-settings-"));
+  let runtime: ReturnType<typeof startServer> | undefined;
+  const store = new Store(dir);
+  try {
+    const reserve = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch: () => new Response(),
+    });
+    const port = reserve.port;
+    await reserve.stop(true);
+    store.setConfig({ ...store.getConfig(), host: "localhost", port });
+    store.setAccount({
+      username: "admin",
+      passwordHash: await Bun.password.hash("synthetic-bind-password", {
+        algorithm: "bcrypt",
+        cost: 4,
+      }),
+    });
+    runtime = startServer(store, { host: "127.0.0.1", allowedIP: "127.0.0.1" });
+    expect(store.getConfig().host).toBe("localhost");
+    const origin = `http://127.0.0.1:${port}`;
+    expect((await fetch(origin + "/api/me")).status).toBe(401);
+    expect(
+      (
+        await fetch(origin + "/api/me", {
+          headers: { Host: `localhost:${port}` },
+        })
+      ).status,
+    ).toBe(403);
+    const login = (requestOrigin: string) =>
+      fetch(origin + "/api/login", {
+        method: "POST",
+        headers: { Origin: requestOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          username: "admin",
+          password: "synthetic-bind-password",
+        }),
+      });
+    expect((await login(`http://localhost:${port}`)).status).toBe(403);
+    const response = await login(origin);
+    expect(response.status).toBe(200);
+    const cookie = response.headers.get("set-cookie")!;
+    expect(cookie).toContain("hoist.session=");
+    expect(cookie).not.toContain("Secure");
+    expect(
+      (
+        await fetch(origin + "/api/me", {
+          headers: { Cookie: cookie.split(";")[0] },
+        })
+      ).status,
+    ).toBe(200);
+  } finally {
+    await runtime?.stop();
+    store.close();
+    rmSync(dir, { recursive: true, force: true });
   }
 });
 
@@ -223,7 +433,7 @@ test("HTTP denies every route before auth, ignores spoofed forwarding headers, a
       const port = reserve.port;
       await reserve.stop(true);
       store.setConfig({ ...store.getConfig(), port });
-      runtime = startServer(store, { allowedIP });
+      runtime = startServer(store, { host: "0.0.0.0", allowedIP });
       const origin = `http://127.0.0.1:${port}`;
       for (const path of [
         "/",

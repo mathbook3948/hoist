@@ -63,7 +63,7 @@ try {
   assert.ok(existsSync(join(home, ".hoist/data/hoist.sqlite")));
   writeFileSync(
     join(home, ".hoist/settings.json"),
-    JSON.stringify({ dataDir: data }),
+    JSON.stringify({ dataDir: data, host: "0.0.0.0" }),
   );
   await cli(["init"]);
   const migrated = new Database(join(data, "hoist.sqlite"), { readonly: true });
