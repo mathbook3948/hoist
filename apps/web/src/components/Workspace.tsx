@@ -129,7 +129,7 @@ export function Workspace({ app }: { app: Console }) {
                 header: "최근 버전",
                 cell: (p) => (
                   <span className="block truncate">
-                    {p.recent?.version || "—"}
+                    {p.recent?.version || "-"}
                   </span>
                 ),
               },
@@ -146,7 +146,7 @@ export function Workspace({ app }: { app: Console }) {
                 id: "duration",
                 header: "소요 시간",
                 className: "tabular-nums",
-                cell: (p) => (p.recent ? formatDuration(p.recent) : "—"),
+                cell: (p) => (p.recent ? formatDuration(p.recent) : "-"),
               },
               {
                 id: "storage",
@@ -159,7 +159,7 @@ export function Workspace({ app }: { app: Console }) {
                 id: "started",
                 header: "최근 배포 시각",
                 className: "tabular-nums",
-                cell: (p) => (p.recent ? formatDate(p.recent.startedAt) : "—"),
+                cell: (p) => (p.recent ? formatDate(p.recent.startedAt) : "-"),
               },
             ]}
           />

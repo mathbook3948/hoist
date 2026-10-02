@@ -39,7 +39,7 @@ export function statusDetails(status?: string): [string, string] {
 }
 
 export function formatDuration(deployment: Deployment) {
-  if (!deployment.finishedAt) return isActive(deployment) ? "진행 중" : "—";
+  if (!deployment.finishedAt) return isActive(deployment) ? "진행 중" : "-";
   const seconds = Math.max(
     0,
     Math.round(
@@ -47,7 +47,7 @@ export function formatDuration(deployment: Deployment) {
         1000,
     ),
   );
-  if (!Number.isFinite(seconds)) return "—";
+  if (!Number.isFinite(seconds)) return "-";
   return seconds < 60
     ? `${seconds}초`
     : `${Math.floor(seconds / 60)}분 ${seconds % 60}초`;
