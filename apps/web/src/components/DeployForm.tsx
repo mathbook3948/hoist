@@ -19,7 +19,7 @@ import {
 import { Alert, AlertDescription } from "./ui/alert";
 import { Separator } from "./ui/separator";
 import { NativeSelect, NativeSelectOption } from "./ui/native-select";
-import { Upload, Play, X } from "lucide-react";
+import { Upload, Play, Square, X } from "lucide-react";
 
 export function DeployForm({ app }: { app: Console }) {
   const { state, project } = app;
@@ -32,11 +32,9 @@ export function DeployForm({ app }: { app: Console }) {
   useEffect(() => {
     if (!state.file && input.current) input.current.value = "";
   }, [state.file, state.projectId]);
-  const running = Boolean(
-    project?.running || project?.deployments.some(isActive),
-  );
+  const runningId = project?.running || project?.deployments.find(isActive)?.id;
   const disabled = Boolean(
-    state.busy || !project || running || state.serverBusy,
+    state.busy || !project || runningId || state.serverBusy,
   );
   const oversized = Boolean(
     state.file &&
@@ -60,13 +58,25 @@ export function DeployForm({ app }: { app: Console }) {
         app.update({ notice: "", noticeError: false });
       }}
     >
-      <DialogTrigger asChild>
+      {runningId ? (
         <Button
-          disabled={Boolean(state.busy || state.serverBusy || app.anyRunning)}
+          id="cancel-button"
+          variant="destructive"
+          disabled={Boolean(state.busy)}
+          onClick={() => void app.cancel(runningId)}
         >
-          <Play />새 배포
+          {state.busy === "cancel" ? <Spinner /> : <Square />}
+          실행 취소
         </Button>
-      </DialogTrigger>
+      ) : (
+        <DialogTrigger asChild>
+          <Button
+            disabled={Boolean(state.busy || state.serverBusy || app.anyRunning)}
+          >
+            <Play />새 배포
+          </Button>
+        </DialogTrigger>
+      )}
       <DialogContent
         showCloseButton={false}
         className="gap-0 overflow-hidden p-0 sm:max-w-2xl"

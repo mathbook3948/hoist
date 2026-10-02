@@ -361,6 +361,30 @@ export function useConsole() {
     loadProjects,
   ]);
 
+  const runningWithoutLogs =
+    !isActive(state.deployment) &&
+    state.projects.some((p) => p.running || p.deployments.some(isActive));
+  useEffect(() => {
+    if (!state.user || !runningWithoutLogs) return;
+    let disposed = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const poll = async () => {
+      try {
+        if (!document.hidden) await loadProjects();
+      } catch (error) {
+        if (!disposed && current.current.user)
+          update({ notice: describe(error), noticeError: true });
+      } finally {
+        if (!disposed) timer = setTimeout(poll, 2000);
+      }
+    };
+    timer = setTimeout(poll, 2000);
+    return () => {
+      disposed = true;
+      clearTimeout(timer);
+    };
+  }, [state.user, runningWithoutLogs, loadProjects, update]);
+
   async function action(
     name: string,
     work: (valid: () => boolean) => Promise<void>,
@@ -517,13 +541,15 @@ export function useConsole() {
           refresh: current.current.refresh + 1,
         });
       }),
-    cancel: () =>
+    cancel: (deploymentId: string) =>
       action("cancel", async (valid) => {
-        const { projectId, deploymentId } = current.current;
+        const { projectId } = current.current;
         await request(
           `/api/projects/${encodeURIComponent(projectId!)}/deployments/${encodeURIComponent(deploymentId!)}/cancel`,
           { method: "POST" },
         );
+        if (!valid()) return;
+        await loadProjects();
         if (valid())
           update({
             refresh: current.current.refresh + 1,

@@ -602,25 +602,73 @@ describe("React deployment console", () => {
     expect(callsTo(fetcher, "/deployments/d1")).toHaveLength(2);
     expect(document.getElementById("cancel-button")).toBeNull();
   }, 10000);
-  test("cancellation uses CSRF and updates the deployment state", async () => {
+  test("the header replaces new deployment with cancellation without opening logs", async () => {
     const project = demo();
     project.deployments = [deployment];
     project.running = "d1";
-    const { fetcher, user } = fixture(true, [project]);
+    const { data, fetcher, user } = fixture(true, [project]);
+    let finish!: () => void;
+    data.intercept = (path) => {
+      if (!path.endsWith("/cancel")) return;
+      // Cancellation is acknowledged before the process actually exits.
+      finish = () => {
+        data.projects[0].deployments = [{ ...deployment, status: "cancelled" }];
+        data.projects[0].running = null;
+      };
+      return json({ ok: true });
+    };
     await ready();
-    await user.click(screen.getByRole("link", { name: "v1", exact: true }));
+    expect(screen.queryByRole("button", { name: "새 배포" })).toBeNull();
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(screen.getByRole("button", { name: "실행 취소" })).toBeEnabled();
+    await user.click(screen.getByRole("button", { name: "실행 취소" }));
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "실행 취소" })).toBeEnabled(),
     );
-    await user.click(screen.getByRole("button", { name: "실행 취소" }));
-    await waitFor(() =>
-      expect(document.getElementById("cancel-button")).toBeNull(),
+    expect(screen.queryByRole("button", { name: "새 배포" })).toBeNull();
+    finish();
+    await waitFor(
+      () =>
+        expect(screen.getByRole("button", { name: "새 배포" })).toBeEnabled(),
+      { timeout: 4000 },
     );
+    expect(document.getElementById("cancel-button")).toBeNull();
+    expect(callsTo(fetcher, "/deployments/d1/cancel")).toHaveLength(1);
+    expect(callsTo(fetcher, "/deployments/d1")).toHaveLength(0);
+    expect(window.location.pathname).toBe("/demo");
     expect(
       new Headers(callsTo(fetcher, "/cancel")[0][1]!.headers).get(
         "X-CSRF-Token",
       ),
     ).toBe("csrf-fixture");
+  });
+  test("logs have no cancellation button and cancellation targets the active deployment", async () => {
+    const project = demo();
+    project.deployments = [
+      deployment,
+      { ...deployment, id: "old", version: "v0", status: "succeeded" },
+    ];
+    // The deployment status also identifies the active run if running is absent.
+    const { data, fetcher, user } = fixture(true, [project]);
+    data.intercept = (path) =>
+      path.endsWith("/deployments/old")
+        ? json({ deployment: project.deployments[1], log: "previous run" })
+        : undefined;
+    await ready();
+    await user.click(screen.getByRole("link", { name: "v0", exact: true }));
+    const logs = await screen.findByRole("alertdialog", { name: /실행 로그/ });
+    expect(
+      within(logs).queryByRole("button", { name: "실행 취소" }),
+    ).toBeNull();
+    await user.click(
+      within(logs).getByRole("button", { name: "닫기", exact: true }),
+    );
+    await user.click(screen.getByRole("button", { name: "실행 취소" }));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "새 배포" })).toBeEnabled(),
+    );
+    expect(callsTo(fetcher, "/deployments/d1/cancel")).toHaveLength(1);
+    expect(callsTo(fetcher, "/deployments/old/cancel")).toHaveLength(0);
   });
   test("project switching discards a late log response and clears the selected file", async () => {
     const first = demo();

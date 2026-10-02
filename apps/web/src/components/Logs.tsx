@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 import type { Console } from "../console";
-import { isActive } from "../display";
 import {
   AlertDialog,
   AlertDialogContent,
@@ -10,7 +9,6 @@ import {
   AlertDialogFooter,
   AlertDialogCancel,
 } from "./ui/alert-dialog";
-import { Button } from "./ui/button";
 import { Checkbox } from "./ui/checkbox";
 import { Field, FieldLabel } from "./ui/field";
 import { ScrollArea, ScrollBar } from "./ui/scroll-area";
@@ -53,16 +51,6 @@ export function Logs({ app }: { app: Console }) {
                   <StatusBadge status={state.deployment.status} />
                 )}
               </div>
-              {isActive(state.deployment) && (
-                <Button
-                  id="cancel-button"
-                  variant="destructive"
-                  disabled={Boolean(state.busy || state.loadingLog)}
-                  onClick={() => void app.cancel()}
-                >
-                  실행 취소
-                </Button>
-              )}
             </AlertDialogHeader>
             <AlertDialogDescription
               className={state.deployment ? "sr-only" : undefined}
