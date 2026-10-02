@@ -1,9 +1,14 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import type { Project } from "../../../server/src/models";
+import {
+  defaultDeployScript,
+  type Project,
+  type ProjectInput,
+} from "../../../server/src/models";
 import type { Console } from "../console";
 import { Button } from "./ui/button";
 import { Plus, Settings, Archive } from "lucide-react";
 import { Input } from "./ui/input";
+import { Textarea } from "./ui/textarea";
 import { Label } from "./ui/label";
 import { Alert, AlertDescription } from "./ui/alert";
 import {
@@ -26,8 +31,10 @@ import {
 
 export function ProjectManagement({ app }: { app: Console }) {
   const [editor, setEditor] = useState<{
-    input: Project;
+    input: ProjectInput;
     editingId?: string;
+    loading?: boolean;
+    loadError?: string;
   } | null>(null);
   const [removing, setRemoving] = useState<Project | null>(null);
   const nameInput = useRef<HTMLInputElement>(null);
@@ -46,16 +53,56 @@ export function ProjectManagement({ app }: { app: Console }) {
     setEditor({
       input: project
         ? {
-            id: project.id,
             name: project.name,
-            script: project.script,
+            scriptContent: "",
             timeoutSeconds: project.timeoutSeconds,
           }
-        : { id: "", name: "", script: "", timeoutSeconds: 300 },
+        : { name: "", scriptContent: defaultDeployScript, timeoutSeconds: 300 },
       editingId: project?.id,
+      loading: Boolean(project),
     });
   }
-  function field(key: keyof Project, value: string | number) {
+  useEffect(() => {
+    const id = editor?.editingId;
+    if (!id) return;
+    let disposed = false;
+    void app
+      .getProjectScript(id)
+      .then((result) => {
+        if (!disposed)
+          setEditor((current) =>
+            current?.editingId === id
+              ? {
+                  ...current,
+                  loading: false,
+                  input: {
+                    ...current.input,
+                    scriptContent: result.scriptContent,
+                  },
+                }
+              : current,
+          );
+      })
+      .catch((error) => {
+        if (!disposed)
+          setEditor((current) =>
+            current?.editingId === id
+              ? {
+                  ...current,
+                  loading: false,
+                  loadError:
+                    error instanceof Error
+                      ? error.message
+                      : "스크립트를 불러올 수 없습니다",
+                }
+              : current,
+          );
+      });
+    return () => {
+      disposed = true;
+    };
+  }, [editor?.editingId]);
+  function field(key: keyof ProjectInput, value: string | number) {
     setEditor(
       (previous) =>
         previous && { ...previous, input: { ...previous.input, [key]: value } },
@@ -63,12 +110,11 @@ export function ProjectManagement({ app }: { app: Console }) {
   }
   async function save(event: FormEvent) {
     event.preventDefault();
-    if (!editor || app.managementBusy) return;
+    if (!editor || editor.loading || editor.loadError || app.managementBusy)
+      return;
     const input = {
       ...editor.input,
-      id: editor.input.id.trim(),
       name: editor.input.name.trim(),
-      script: editor.input.script.trim(),
     };
     if (await app.saveProject(input, editor.editingId)) setEditor(null);
   }
@@ -139,7 +185,7 @@ export function ProjectManagement({ app }: { app: Console }) {
       >
         <DialogContent
           showCloseButton={false}
-          className="max-h-[90svh] overflow-y-auto"
+          className="max-h-[90svh] overflow-y-auto sm:max-w-3xl"
           onOpenAutoFocus={(e) => {
             e.preventDefault();
             nameInput.current?.focus();
@@ -160,24 +206,6 @@ export function ProjectManagement({ app }: { app: Console }) {
           {editor && (
             <form id="project-form" className="space-y-4" onSubmit={save}>
               <div className="space-y-2">
-                <Label htmlFor="project-id-input">프로젝트 ID</Label>
-                <Input
-                  id="project-id-input"
-                  required
-                  maxLength={64}
-                  pattern="[a-zA-Z0-9_-]{1,64}"
-                  autoComplete="off"
-                  placeholder="my-service"
-                  value={editor.input.id}
-                  readOnly={Boolean(editor.editingId)}
-                  disabled={app.managementBusy}
-                  onChange={(e) => field("id", e.target.value)}
-                />
-                <p className="text-xs text-muted-foreground">
-                  영문·숫자·밑줄·하이픈. 등록 후 변경할 수 없습니다.
-                </p>
-              </div>
-              <div className="space-y-2">
                 <Label htmlFor="project-name-input">프로젝트 이름</Label>
                 <Input
                   ref={nameInput}
@@ -191,20 +219,27 @@ export function ProjectManagement({ app }: { app: Console }) {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="project-script-input">
-                  서버의 배포 스크립트 경로
-                </Label>
-                <Input
+                <Label htmlFor="project-script-input">배포 스크립트</Label>
+                <Textarea
                   id="project-script-input"
                   required
                   autoComplete="off"
-                  placeholder="/opt/hoist/scripts/deploy.sh"
-                  value={editor.input.script}
-                  disabled={app.managementBusy}
-                  onChange={(e) => field("script", e.target.value)}
+                  autoCapitalize="none"
+                  spellCheck={false}
+                  wrap="off"
+                  className="h-72 min-h-48 field-sizing-fixed font-mono text-sm leading-relaxed"
+                  value={editor.input.scriptContent}
+                  disabled={
+                    app.managementBusy ||
+                    editor.loading ||
+                    Boolean(editor.loadError)
+                  }
+                  onChange={(e) => field("scriptContent", e.target.value)}
                 />
                 <p className="text-xs text-muted-foreground">
-                  서버에 존재하는 스크립트의 절대 경로
+                  {editor.loading
+                    ? "스크립트를 불러오는 중…"
+                    : "sh · $1: 업로드 파일 경로 · $2: 버전"}
                 </p>
               </div>
               <div className="space-y-2">
@@ -225,6 +260,11 @@ export function ProjectManagement({ app }: { app: Console }) {
                   }
                 />
               </div>
+              {editor.loadError && (
+                <Alert variant="destructive">
+                  <AlertDescription>{editor.loadError}</AlertDescription>
+                </Alert>
+              )}
               {error}
               <DialogFooter>
                 <Button
@@ -238,7 +278,11 @@ export function ProjectManagement({ app }: { app: Console }) {
                 <Button
                   id="project-save-button"
                   type="submit"
-                  disabled={app.managementBusy}
+                  disabled={
+                    app.managementBusy ||
+                    editor.loading ||
+                    Boolean(editor.loadError)
+                  }
                 >
                   저장
                 </Button>
@@ -263,7 +307,7 @@ export function ProjectManagement({ app }: { app: Console }) {
             <AlertDialogTitle>프로젝트 등록 해제 확인</AlertDialogTitle>
             <AlertDialogDescription>
               ‘{removing?.name}’ 프로젝트의 등록을 해제할까요? 기존 파일과 배포
-              이력은 보관되며, 같은 ID로 다시 등록하면 복원됩니다.
+              이력은 보관됩니다.
             </AlertDialogDescription>
           </AlertDialogHeader>
           {error}

@@ -86,14 +86,25 @@ export function startServer(store: Store) {
             })),
           });
         if (path === "/api/projects" && method === "POST")
-          return json({ project: projects.create(await smallJSON(req)) }, 201);
+          return json(
+            { project: projects.create(await smallJSON(req, 512 * 1024)) },
+            201,
+          );
+        const scriptMatch = path.match(
+          /^\/api\/projects\/([a-zA-Z0-9_-]{1,64})\/script$/,
+        );
+        if (scriptMatch && method === "GET")
+          return json(projects.script(scriptMatch[1]));
         const projectMatch = path.match(
           /^\/api\/projects\/([a-zA-Z0-9_-]{1,64})$/,
         );
         if (projectMatch) {
           if (method === "PUT")
             return json({
-              project: projects.update(projectMatch[1], await smallJSON(req)),
+              project: projects.update(
+                projectMatch[1],
+                await smallJSON(req, 512 * 1024),
+              ),
             });
           if (method === "DELETE") {
             projects.remove(projectMatch[1]);

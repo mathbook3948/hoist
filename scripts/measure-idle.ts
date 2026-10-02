@@ -24,6 +24,7 @@ const binarySha256 = createHash("sha256")
   .update(readFileSync(executable))
   .digest("hex");
 const revision = Bun.spawnSync(["git", "rev-parse", "HEAD"], { cwd: root });
+const status = Bun.spawnSync(["git", "status", "--porcelain"], { cwd: root });
 if (revision.exitCode !== 0)
   throw new Error("Cannot determine measured commit");
 const temp = mkdtempSync(join(tmpdir(), "hoist-idle-"));
@@ -170,6 +171,8 @@ try {
   const report = {
     measuredAt: new Date().toISOString(),
     commit: revision.stdout.toString().trim(),
+    workingTreeDirty:
+      status.exitCode === 0 ? Boolean(status.stdout.toString().trim()) : null,
     binarySha256,
     platform: process.platform,
     osRelease: release(),

@@ -5,12 +5,16 @@ import {
   rmSync,
   existsSync,
   mkdirSync,
+  readFileSync,
+  symlinkSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Store, GiB, defaultLimits } from "../apps/server/src/store";
 import { startServer } from "../apps/server/src/server";
 import { main } from "../apps/cli/src/main";
+import { createProjects } from "../apps/server/src/projects";
+import { trustedScript } from "../apps/server/src/scripts";
 
 async function fixture(tmp: string) {
   const dir = join(tmp, "data");
@@ -347,3 +351,224 @@ test("large streamed uploads exceed the old limit and block project changes unti
     rmSync(tmp, { recursive: true, force: true });
   }
 }, 15000);
+
+test("managed scripts use generated IDs, load on demand, and persist edits through authenticated HTTP", async () => {
+  const tmp = mkdtempSync(join(tmpdir(), "hoist-managed-http-"));
+  const f = await fixture(tmp);
+  try {
+    const created = await f.call("/api/projects", "POST", { name: "Managed" });
+    expect(created.status).toBe(201);
+    const { project } = await created.json();
+    expect(project.id).toMatch(/^[0-9a-f-]{36}$/);
+    const scriptPath = join(f.dir, "projects", project.id, "deploy.sh");
+    expect(project.script).toBe(scriptPath);
+    expect(readFileSync(scriptPath, "utf8")).toContain("exit 1");
+    const endpoint = `/api/projects/${project.id}`;
+    expect((await fetch(f.origin + endpoint + "/script")).status).toBe(401);
+    expect((await f.call(endpoint + "/script")).status).toBe(200);
+    const listing = await (await f.call("/api/projects")).json();
+    expect(listing.projects[0].scriptContent).toBeUndefined();
+    const scriptContent = '#!/bin/sh\r\nset -eu\r\nprintf "%s\\n" "$2"\r\n';
+    const input = { name: "Renamed", scriptContent, timeoutSeconds: 60 };
+    expect(
+      (await f.call(endpoint, "PUT", input, { "X-CSRF-Token": "wrong" }))
+        .status,
+    ).toBe(403);
+    expect((await f.call(endpoint, "PUT", input)).status).toBe(200);
+    expect(
+      (await (await f.call(endpoint + "/script")).json()).scriptContent,
+    ).toBe(scriptContent.replaceAll("\r\n", "\n"));
+    expect(f.store.getProject(project.id)?.script).toBe(scriptPath);
+    expect(f.store.getProject(project.id)?.name).toBe("Renamed");
+    const before = readFileSync(scriptPath, "utf8");
+    expect(
+      (await f.call(endpoint, "PUT", { ...input, id: "changed" })).status,
+    ).toBe(400);
+    expect(
+      (
+        await f.call(endpoint, "PUT", {
+          ...input,
+          scriptContent: "x".repeat(65537),
+        })
+      ).status,
+    ).toBe(400);
+    expect(
+      (
+        await f.call(endpoint, "PUT", {
+          ...input,
+          scriptContent: "bad\u0000script",
+        })
+      ).status,
+    ).toBe(400);
+    expect(readFileSync(scriptPath, "utf8")).toBe(before);
+    const second = await (
+      await f.call("/api/projects", "POST", { name: "Renamed" })
+    ).json();
+    expect(second.project.id).not.toBe(project.id);
+    expect((await f.call(endpoint, "DELETE")).status).toBe(200);
+    expect(existsSync(scriptPath)).toBe(true);
+    expect((await f.call(endpoint + "/script")).status).toBe(404);
+  } finally {
+    await f.runtime.stop();
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test("script saves preserve previous files on busy or failed persistence and retain legacy paths", () => {
+  const tmp = mkdtempSync(join(tmpdir(), "hoist-managed-save-"));
+  const store = new Store(join(tmp, "data"));
+  let busy = false;
+  const projects = createProjects(store, join(tmp, "assets"), () => busy);
+  try {
+    const legacy = join(tmp, "legacy.sh");
+    writeFileSync(legacy, "#!/bin/sh\necho legacy\n");
+    const project = projects.create({ name: "Legacy", script: legacy });
+    projects.update(project.id, {
+      name: "Legacy",
+      scriptContent: "#!/bin/sh\necho updated\n",
+    });
+    expect(store.getProject(project.id)?.script).toBe(legacy);
+    expect(readFileSync(legacy, "utf8")).toContain("echo updated");
+    const managed = projects.create({ name: "Managed" });
+    const before = readFileSync(managed.script, "utf8");
+    busy = true;
+    expect(() =>
+      projects.update(managed.id, { name: "Busy", scriptContent: "echo busy" }),
+    ).toThrow("finish");
+    busy = false;
+    const save = store.setProject.bind(store);
+    store.setProject = () => {
+      throw new Error("Database failure");
+    };
+    expect(() =>
+      projects.update(managed.id, {
+        name: "Failed",
+        scriptContent: "echo failed",
+      }),
+    ).toThrow("Database failure");
+    store.setProject = save;
+    expect(readFileSync(managed.script, "utf8")).toBe(before);
+    expect(store.getProject(managed.id)?.name).toBe("Managed");
+  } finally {
+    store.close();
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test("managed scripts cannot use artifact paths, other project scripts or linked directories", () => {
+  const tmp = mkdtempSync(join(tmpdir(), "hoist-managed-path-"));
+  const store = new Store(join(tmp, "data"));
+  const assets = join(tmp, "assets");
+  const projects = createProjects(store, assets, () => false);
+  try {
+    const a = projects.create({ name: "A" });
+    const b = projects.create({ name: "B" });
+    expect(trustedScript(store.dir, assets, a.id, a.script)).toBe(a.script);
+    expect(() => trustedScript(store.dir, assets, b.id, a.script)).toThrow(
+      "Only this project",
+    );
+    const artifact = join(
+      store.dir,
+      "projects",
+      a.id,
+      "artifacts",
+      "upload.bin",
+    );
+    writeFileSync(artifact, "echo unsafe");
+    expect(() =>
+      projects.update(a.id, { name: "A", script: artifact }),
+    ).toThrow();
+    const outside = join(tmp, "outside");
+    mkdirSync(outside);
+    symlinkSync(
+      outside,
+      join(store.dir, "projects", "linked"),
+      process.platform === "win32" ? "junction" : "dir",
+    );
+    expect(() => projects.create({ id: "linked", name: "Linked" })).toThrow(
+      "real directory",
+    );
+    expect(existsSync(join(outside, "deploy.sh"))).toBe(false);
+  } finally {
+    store.close();
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test.skipIf(process.platform !== "linux")(
+  "a managed deploy.sh executes with artifact and version arguments",
+  async () => {
+    const tmp = mkdtempSync(join(tmpdir(), "hoist-managed-run-"));
+    const f = await fixture(tmp);
+    try {
+      const { project } = await (
+        await f.call("/api/projects", "POST", {
+          name: "Shell",
+          scriptContent:
+            '#!/bin/sh\nset -eu\nprintf "version=%s\\n" "$2"\ncat "$1"\n',
+        })
+      ).json();
+      const endpoint = `/api/projects/${project.id}`;
+      const upload = await fetch(f.origin + endpoint + "/artifacts", {
+        method: "POST",
+        headers: f.headers,
+        body: "managed artifact",
+      });
+      const { artifact } = await upload.json();
+      const launched = await f.call(endpoint + "/deploy", "POST", {
+        artifactId: artifact.id,
+        version: "v-managed",
+      });
+      expect(launched.status).toBe(202);
+      const { deployment } = await launched.json();
+      let result;
+      for (let i = 0; i < 100; i++) {
+        result = await (
+          await f.call(endpoint + `/deployments/${deployment.id}`)
+        ).json();
+        if (result.deployment.status !== "running") break;
+        await Bun.sleep(20);
+      }
+      expect(result.deployment.status).toBe("succeeded");
+      expect(result.log).toContain("version=v-managed");
+      expect(result.log).toContain("managed artifact");
+    } finally {
+      await f.runtime.stop();
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  },
+);
+
+test("CLI project create generates an ID and imports the initial script", async () => {
+  const tmp = mkdtempSync(join(tmpdir(), "hoist-cli-project-"));
+  try {
+    const input = join(tmp, "source.sh");
+    writeFileSync(input, "#!/bin/sh\r\necho cli\r\n");
+    const data = join(tmp, "data");
+    await main([
+      "project",
+      "create",
+      "CLI project",
+      "--script",
+      input,
+      "--data-dir",
+      data,
+    ]);
+    const store = new Store(data);
+    try {
+      const [project] = store.getProjects();
+      expect(project.id).toMatch(/^[0-9a-f-]{36}$/);
+      expect(project.name).toBe("CLI project");
+      expect(project.script).toBe(
+        join(store.dir, "projects", project.id, "deploy.sh"),
+      );
+      expect(readFileSync(project.script, "utf8")).toBe(
+        "#!/bin/sh\necho cli\n",
+      );
+    } finally {
+      store.close();
+    }
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});

@@ -24,7 +24,7 @@ export function json(
 ) {
   return Response.json(value, { status, headers: { ...security, ...extra } });
 }
-export async function smallJSON(req: Request) {
+export async function smallJSON(req: Request, maxBytes = 8192) {
   if (!(req.headers.get("content-type") || "").startsWith("application/json"))
     fail(415, "JSON content type required");
   if (!req.body) fail(400, "Body required");
@@ -42,7 +42,7 @@ export async function smallJSON(req: Request) {
       if (timedOut) fail(408, "JSON body deadline exceeded");
       if (r.done) break;
       total += r.value.length;
-      if (total > 8192) fail(413, "Request too large");
+      if (total > maxBytes) fail(413, "Request too large");
       chunks.push(r.value);
     }
     let value: unknown;

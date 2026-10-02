@@ -1,6 +1,8 @@
 import { initData, Store, defaultConfig, validId } from "@hoist/server/store";
 import { acquireDataLock, serve } from "@hoist/server/runtime";
-import { parseProject } from "@hoist/server/projects";
+import { parseProject, createProjects } from "@hoist/server/projects";
+import { readScript } from "@hoist/server/scripts";
+import { resolve } from "node:path";
 import { assetsDir } from "@hoist/web/assets";
 import { readPassword } from "./password";
 import { resolveDataDir } from "@hoist/server/paths";
@@ -9,6 +11,7 @@ const HELP = `Hoist (Bun, Linux)
   hoist user set USER [--password-stdin] --data-dir DIR
   hoist user list --data-dir DIR
   hoist user remove USER --data-dir DIR
+  hoist project create NAME [--script FILE] [--timeout 300] [--data-dir DIR]
   hoist project set ID --name NAME --script /absolute/trusted.sh --timeout 300 --data-dir DIR
   hoist project list --data-dir DIR
   hoist project remove ID --data-dir DIR
@@ -115,6 +118,17 @@ export async function main(argv: string[], developmentDataDir?: string) {
     if (command === "project") {
       const action = positional[1],
         id = positional[2];
+      if (action === "create") {
+        const project = createProjects(store, assetsDir, () => false).create({
+          name: id,
+          timeoutSeconds: Number(options.get("--timeout") || 300),
+          ...(options.has("--script")
+            ? { scriptContent: readScript(resolve(options.get("--script")!)) }
+            : {}),
+        });
+        console.log(`Project created: ${project.id}`);
+        return;
+      }
       if (action === "list") {
         for (const p of store.getProjects())
           console.log(`${p.id}\t${p.name}\t${p.script}`);

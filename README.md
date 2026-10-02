@@ -19,9 +19,8 @@ bun run cli init --data-dir "$HOME/.local/share/hoist"
 bun run cli user set admin --data-dir "$HOME/.local/share/hoist"
 
 # 무해한 예제: 파일/서비스를 변경하지 않고 받은 인수만 로그에 출력
-mkdir -p "$HOME/.local/share/hoist/scripts"
-cp examples/deploy.sh "$HOME/.local/share/hoist/scripts/demo.sh"
-bun run cli project set demo --name 'Demo' --script "$HOME/.local/share/hoist/scripts/demo.sh" --timeout 300 --data-dir "$HOME/.local/share/hoist"
+bun run cli project create 'Demo' --script examples/deploy.sh --data-dir "$HOME/.local/share/hoist"
+# ID를 자동 생성하고 스크립트를 projects/ID/deploy.sh로 복사합니다.
 
 bun run cli serve --data-dir "$HOME/.local/share/hoist"
 ```
@@ -49,6 +48,7 @@ DATA_DIR/
   scripts/                    # 선택 사항, 관리자가 직접 두는 신뢰된 스크립트
   runtime.lock/pid             # 단일 서버/CLI 변경 락
   projects/PROJECT/
+    deploy.sh                 # 웹/CLI에서 생성한 프로젝트의 배포 스크립트
     artifacts/RANDOM_UUID.bin  # 원래 파일명은 메타데이터에만 저장
     logs/RANDOM_UUID.log       # stdout + stderr, 크기 제한
 ```
@@ -69,7 +69,11 @@ bun run cli project remove PROJECT --data-dir /absolute/data
 
 ## 웹 프로젝트 관리
 
-로그인 후 **프로젝트 관리**에서 프로젝트를 등록하고, 선택한 프로젝트의 이름·배포 스크립트 경로·실행 제한 시간을 수정할 수 있습니다. 스크립트는 서버에 미리 만들어 두고 절대 경로로 지정합니다. 프로젝트 ID는 등록 후 변경할 수 없습니다.
+로그인 후 **프로젝트 관리**에서 이름을 입력해 등록하면 서버가 UUID를 자동 생성합니다. 설정 창에서 배포 스크립트 내용을 직접 편집하고 실행 제한 시간을 바꿀 수 있습니다. 신규 프로젝트의 스크립트는 `DATA_DIR/projects/ID/deploy.sh`에 저장하며, 별도 경로 입력은 필요 없습니다. 기본 스크립트는 내용을 설정하기 전에는 실패로 종료합니다.
+
+편집기는 shadcn Textarea를 사용하며 별도 Monaco/언어 서버를 띄우지 않습니다. 스크립트는 설정 창을 열 때만 읽고 목록 응답이나 서버 캐시에 보관하지 않습니다. 스크립트는 UTF-8 최대 64 KiB이며 저장 시 줄바꿈을 LF로 통일합니다. 파일은 임시 파일을 통한 교체로 저장하고, DB 저장에 실패하면 이전 내용으로 되돌립니다. 저장은 실행을 일으키지 않으며 다음 배포부터 반영됩니다. 업로드·배포 중에는 저장할 수 없습니다.
+
+CLI에서는 `hoist project create '이름'`으로 생성하고 `--script FILE`로 초기 스크립트를 복사할 수 있습니다. 기존 `project set ID --script PATH`와 경로 기반 API 등록도 호환됩니다. 기존 외부 스크립트 프로젝트는 실행 작업 디렉터리가 바뀌지 않도록 원래 파일의 내용을 편집하며 자동 이동하지 않습니다. 등록 해제한 프로젝트의 복원이 필요하면 `project list`에 기록해 둔 ID와 보관된 스크립트 경로로 `project set`을 사용하세요. 새로 등록하면 새로운 ID를 생성합니다.
 
 프로젝트 변경은 서버를 재시작하지 않고 바로 적용되며 SQLite에 저장됩니다. 업로드·배포 요청 처리 중에는 프로젝트 변경이 차단됩니다. **등록 해제**는 확인 후 진행하며 파일과 배포 이력을 보관합니다. 같은 ID로 다시 등록하면 보관된 데이터가 복원됩니다.
 
@@ -100,7 +104,7 @@ bun run cli project remove PROJECT --data-dir /absolute/data
 등록된 절대 경로의 스크립트를 아래 방식으로 실행합니다:
 
 ```text
-/bin/sh /absolute/trusted-script.sh /absolute/random-artifact.bin VERSION
+/bin/sh DATA_DIR/projects/ID/deploy.sh /absolute/random-artifact.bin VERSION
 ```
 
 artifact 경로와 version은 **분리된 argv**입니다. 업로드 파일명을 셸 명령에 끼워 넣지 않습니다. 스크립트의 작업 디렉터리는 스크립트가 있는 폴더이고 stdin은 닫혀 있습니다. 환경은 PATH와 LANG만 전달합니다. 스크립트는 관리자만 변경할 수 있어야 하며 업로드 폴더/정적 웹 파일은 스크립트로 등록할 수 없습니다.

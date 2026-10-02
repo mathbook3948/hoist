@@ -11,6 +11,7 @@
     ".": "./src/server.ts",
     "./store": "./src/store.ts",
     "./projects": "./src/projects.ts",
+    "./scripts": "./src/scripts.ts",
     "./runtime": "./src/runtime.ts",
     "./paths": "./src/paths.ts"
   },

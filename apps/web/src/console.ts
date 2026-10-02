@@ -4,6 +4,7 @@ import type {
   Config,
   Deployment,
   Project,
+  ProjectInput,
 } from "../../server/src/models";
 import { byNewest, isActive } from "./display";
 
@@ -445,16 +446,20 @@ export function useConsole() {
             notice: "실행 취소를 요청했어요",
           });
       }),
-    saveProject: (input: Project, editingId?: string) =>
+    getProjectScript: (id: string) =>
+      request<{ scriptContent: string }>(
+        `/api/projects/${encodeURIComponent(id)}/script`,
+      ),
+    saveProject: (input: ProjectInput, editingId?: string) =>
       action("save", async (valid) => {
-        await request(
+        const result = await request<{ project: Project }>(
           editingId
             ? `/api/projects/${encodeURIComponent(editingId)}`
             : "/api/projects",
           { method: editingId ? "PUT" : "POST", json: input },
         );
         if (!valid()) return;
-        await loadProjects(input.id, false);
+        await loadProjects(result.project.id, false);
         if (valid())
           update({
             notice: editingId

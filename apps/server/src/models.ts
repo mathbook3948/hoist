@@ -5,6 +5,18 @@ export type Project = {
   script: string;
   timeoutSeconds: number;
 };
+export type ProjectInput = {
+  name: string;
+  scriptContent: string;
+  timeoutSeconds: number;
+};
+export const defaultDeployScript = `#!/bin/sh
+set -eu
+
+# $1: uploaded artifact path, $2: version
+echo "Configure the deployment script before running a deployment." >&2
+exit 1
+`;
 export type Config = {
   host: string;
   port: number;

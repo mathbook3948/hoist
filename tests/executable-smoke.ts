@@ -132,12 +132,41 @@ try {
   });
   assert.equal(login.status, 200);
   const cookie = login.headers.get("set-cookie")!.split(";")[0];
-  assert.ok((await login.json()).csrf);
+  const csrf = (await login.json()).csrf;
+  assert.ok(csrf);
   const projects = await fetch(origin + "/api/projects", {
     headers: { Cookie: cookie },
   });
   assert.equal(projects.status, 200);
   assert.deepEqual((await projects.json()).projects, []);
+  const projectHeaders = {
+    Cookie: cookie,
+    Origin: origin,
+    "X-CSRF-Token": csrf,
+    "Content-Type": "application/json",
+  };
+  const created = await fetch(origin + "/api/projects", {
+    method: "POST",
+    headers: projectHeaders,
+    body: JSON.stringify({ name: "Managed script" }),
+  });
+  assert.equal(created.status, 201);
+  const { project } = await created.json();
+  assert.match(project.id, /^[0-9a-f-]{36}$/);
+  assert.equal(project.script, join(data, "projects", project.id, "deploy.sh"));
+  const scriptContent = '#!/bin/sh\nprintf "%s\\n" "$2"\n';
+  const updated = await fetch(origin + `/api/projects/${project.id}`, {
+    method: "PUT",
+    headers: projectHeaders,
+    body: JSON.stringify({ name: "Managed script", scriptContent }),
+  });
+  assert.equal(updated.status, 200);
+  const scriptResponse = await fetch(
+    origin + `/api/projects/${project.id}/script`,
+    { headers: { Cookie: cookie } },
+  );
+  assert.equal((await scriptResponse.json()).scriptContent, scriptContent);
+  assert.equal(await Bun.file(project.script).text(), scriptContent);
   console.log(
     `Executable passed: CLI, SQLite, all ${files.length} embedded Vite assets, login and API with an empty PATH from a temporary directory.`,
   );

@@ -1,7 +1,6 @@
 import {
   existsSync,
   lstatSync,
-  realpathSync,
   writeFileSync,
   appendFileSync,
   readFileSync,
@@ -17,6 +16,7 @@ import {
   projectDir,
 } from "./store";
 import { fail } from "./http";
+import { trustedScript } from "./scripts";
 
 export function createDeployments(
   store: Store,
@@ -46,13 +46,12 @@ export function createDeployments(
       fail(400, "Version must be 1–128 characters without control characters");
     if (!existsSync(p.script) || !lstatSync(p.script).isFile())
       fail(400, "Configured script is missing");
-    const script = realpathSync(p.script);
-    if (
-      script === dir ||
-      script.startsWith(join(dir, "projects") + "/") ||
-      script.startsWith(assets + "/")
-    )
-      fail(400, "Script must be outside uploaded artifacts and web assets");
+    let script: string;
+    try {
+      script = trustedScript(dir, assets, p.id, p.script);
+    } catch (error) {
+      fail(400, error instanceof Error ? error.message : "Invalid script");
+    }
     const deployment: Deployment = {
       id: randomUUID(),
       artifactId,

@@ -99,6 +99,8 @@ function fixture(authenticated = true, initialProjects = [demo()]) {
         data.projects[0].running = launched.id;
         return json({ deployment: launched }, 202);
       }
+      if (path.endsWith("/script") && method === "GET")
+        return json({ scriptContent: "#!/bin/sh\necho existing\n" });
       if (path === "/api/projects" && method === "GET")
         return json({
           projects: data.projects,
@@ -111,6 +113,7 @@ function fixture(authenticated = true, initialProjects = [demo()]) {
         });
       if (method === "POST" && path === "/api/projects") {
         const inputBody = JSON.parse(String(init.body));
+        inputBody.id = "generated-id";
         data.projects.push({
           ...inputBody,
           artifacts: [],
@@ -120,11 +123,11 @@ function fixture(authenticated = true, initialProjects = [demo()]) {
         return json({ project: inputBody }, 201);
       }
       if (method === "PUT") {
-        Object.assign(
+        const project = Object.assign(
           data.projects.find((p) => path.endsWith(p.id))!,
           JSON.parse(String(init.body)),
         );
-        return json({ ok: true });
+        return json({ project });
       }
       if (method === "DELETE") {
         data.projects = data.projects.filter((p) => !path.endsWith(p.id));
@@ -348,16 +351,30 @@ describe("React deployment console", () => {
     const { fetcher, user } = fixture(true, []);
     await screen.findByText("아직 프로젝트가 없습니다");
     await user.click(screen.getByRole("button", { name: "등록" }));
-    await user.type(screen.getByLabelText("프로젝트 ID"), "new");
+    expect(screen.queryByLabelText("프로젝트 ID")).toBeNull();
     await user.type(screen.getByLabelText("프로젝트 이름"), "New project");
+    await user.clear(screen.getByLabelText("배포 스크립트"));
     await user.type(
-      screen.getByLabelText("서버의 배포 스크립트 경로"),
-      "/trusted/new.sh",
+      screen.getByLabelText("배포 스크립트"),
+      "#!/bin/sh\necho deployed",
     );
     await user.click(screen.getByRole("button", { name: "저장" }));
     await screen.findByRole("heading", { name: "New project", level: 1 });
+    const created = fetcher.mock.calls.find(
+      ([path, init]) => path === "/api/projects" && init?.method === "POST",
+    )!;
+    expect(JSON.parse(String(created[1]?.body))).toEqual({
+      name: "New project",
+      scriptContent: "#!/bin/sh\necho deployed",
+      timeoutSeconds: 300,
+    });
     await user.click(screen.getByRole("button", { name: "설정", exact: true }));
-    expect(screen.getByLabelText("프로젝트 ID")).toHaveAttribute("readonly");
+    expect(screen.queryByLabelText("프로젝트 ID")).toBeNull();
+    await waitFor(() =>
+      expect(screen.getByLabelText("배포 스크립트")).toHaveValue(
+        "#!/bin/sh\necho existing\n",
+      ),
+    );
     await user.clear(screen.getByLabelText("프로젝트 이름"));
     await user.type(screen.getByLabelText("프로젝트 이름"), "Updated");
     await user.click(screen.getByRole("button", { name: "저장" }));
@@ -365,7 +382,7 @@ describe("React deployment console", () => {
     expect(
       fetcher.mock.calls.some(
         ([path, init]) =>
-          path === "/api/projects/new" && init?.method === "PUT",
+          path === "/api/projects/generated-id" && init?.method === "PUT",
       ),
     ).toBe(true);
   });
@@ -387,6 +404,31 @@ describe("React deployment console", () => {
       ).getByRole("button", { name: "등록 해제" }),
     );
     await screen.findByRole("heading", { name: "Second", level: 1 });
+  });
+  test("scripts load only when editing, and failed reads cannot overwrite the file", async () => {
+    const { data, fetcher, user } = fixture();
+    await ready();
+    expect(callsTo(fetcher, "/script")).toHaveLength(0);
+    data.intercept = (path) =>
+      path.endsWith("/script")
+        ? json({ error: "Script unavailable" }, 400)
+        : undefined;
+    await user.click(screen.getByRole("button", { name: "설정", exact: true }));
+    expect(await screen.findByText("Script unavailable")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "저장" })).toBeDisabled();
+    expect(screen.getByLabelText("배포 스크립트")).toBeDisabled();
+    expect(fetcher.mock.calls.some(([, init]) => init?.method === "PUT")).toBe(
+      false,
+    );
+    await user.click(screen.getByRole("button", { name: "닫기" }));
+    data.intercept = undefined;
+    await user.click(screen.getByRole("button", { name: "설정", exact: true }));
+    await waitFor(() =>
+      expect(screen.getByLabelText("배포 스크립트")).toHaveValue(
+        "#!/bin/sh\necho existing\n",
+      ),
+    );
+    expect(screen.getByRole("button", { name: "저장" })).toBeEnabled();
   });
   test("project management respects server busy state and keeps failed edits open", async () => {
     const { data, user } = fixture();

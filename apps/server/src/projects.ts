@@ -1,36 +1,22 @@
-import { existsSync, lstatSync, realpathSync } from "node:fs";
-import { isAbsolute, join } from "node:path";
-import { type Project, Store, validId } from "./store";
+import { existsSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import { type Project, Store, validId, projectDir } from "./store";
+import { defaultDeployScript } from "./models";
+import {
+  managedScriptPath,
+  trustedScript,
+  readScript,
+  normalizeScript,
+  saveScript,
+} from "./scripts";
 import { fail } from "./http";
 
-export function parseProject(
-  dir: string,
-  assets: string,
-  input: Record<string, unknown>,
-): Project {
-  const { id, name, script: inputScript, timeoutSeconds } = input;
+function fields(input: Record<string, unknown>) {
+  const { id, name, timeoutSeconds = 300 } = input;
   if (typeof id !== "string" || !validId(id))
     throw new Error("Invalid project ID");
   if (typeof name !== "string" || !name.trim() || name.length > 100)
     throw new Error("Name must be 1–100 characters");
-  if (
-    typeof inputScript !== "string" ||
-    !isAbsolute(inputScript) ||
-    inputScript.includes("\0") ||
-    !existsSync(inputScript) ||
-    !lstatSync(inputScript).isFile()
-  )
-    throw new Error("Script must name an existing absolute trusted script");
-  const script = realpathSync(inputScript);
-  if (
-    script === dir ||
-    script.startsWith(join(dir, "projects") + "/") ||
-    script === assets ||
-    script.startsWith(assets + "/")
-  )
-    throw new Error(
-      "Uploaded artifacts/web assets cannot be registered as scripts",
-    );
   if (
     typeof timeoutSeconds !== "number" ||
     !Number.isInteger(timeoutSeconds) ||
@@ -38,7 +24,21 @@ export function parseProject(
     timeoutSeconds > 3600
   )
     throw new Error("Timeout must be 1–3600 seconds");
-  return { id, name: name.trim(), script, timeoutSeconds };
+  return { id, name: name.trim(), timeoutSeconds };
+}
+
+export function parseProject(
+  dir: string,
+  assets: string,
+  input: Record<string, unknown>,
+): Project {
+  const project = fields(input);
+  if (typeof input.script !== "string")
+    throw new Error("Script must name an existing absolute trusted script");
+  return {
+    ...project,
+    script: trustedScript(dir, assets, project.id, input.script),
+  };
 }
 
 export function createProjects(
@@ -55,31 +55,71 @@ export function createProjects(
       );
   }
 
-  function parse(input: Record<string, unknown>) {
+  function validate<T>(work: () => T): T {
     try {
-      return parseProject(dir, assets, input);
+      return work();
     } catch (e) {
       fail(400, e instanceof Error ? e.message : "Invalid project");
     }
   }
 
+  function save(input: Record<string, unknown>, existing?: Project) {
+    return validate(() => {
+      // Retain path-based registration for existing CLI/API callers.
+      if (input.scriptContent === undefined && input.script !== undefined) {
+        const project = parseProject(dir, assets, input);
+        store.setProject(project);
+        return project;
+      }
+      const metadata = fields(input);
+      const content = normalizeScript(
+        input.scriptContent !== undefined
+          ? input.scriptContent
+          : existing
+            ? readScript(
+                trustedScript(dir, assets, existing.id, existing.script),
+              )
+            : defaultDeployScript,
+      );
+      // Preserve legacy external scripts and their execution working directory.
+      const script = existing
+        ? trustedScript(dir, assets, existing.id, existing.script)
+        : managedScriptPath(dir, metadata.id);
+      const project = { ...metadata, script };
+      saveScript(store, project, content);
+      return project;
+    });
+  }
+
   function create(input: Record<string, unknown>) {
     ensureIdle();
-    const project = parse(input);
-    if (store.getProject(project.id)) fail(409, "Project ID already exists");
+    let id = input.id;
+    if (id === undefined) {
+      do {
+        id = randomUUID();
+      } while (existsSync(projectDir(dir, id as string)));
+    }
+    validate(() => fields({ ...input, id }));
+    if (store.getProject(id as string)) fail(409, "Project ID already exists");
     if (store.getProjects().length >= 32) fail(409, "Project limit reached");
-    store.setProject(project);
-    return project;
+    return save({ ...input, id });
   }
 
   function update(id: string, input: Record<string, unknown>) {
     ensureIdle();
-    if (!store.getProject(id)) fail(404, "Project not found");
+    const existing = store.getProject(id);
+    if (!existing) fail(404, "Project not found");
     if (input.id !== undefined && input.id !== id)
       fail(400, "Project ID cannot be changed");
-    const project = parse({ ...input, id });
-    store.setProject(project);
-    return project;
+    return save({ ...input, id }, existing);
+  }
+
+  function script(id: string) {
+    const project = store.getProject(id);
+    if (!project) fail(404, "Project not found");
+    return validate(() => ({
+      scriptContent: readScript(trustedScript(dir, assets, id, project.script)),
+    }));
   }
 
   function remove(id: string) {
@@ -88,5 +128,5 @@ export function createProjects(
     store.removeProject(id);
   }
 
-  return { create, update, remove };
+  return { create, update, remove, script };
 }
