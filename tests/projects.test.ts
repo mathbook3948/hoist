@@ -68,6 +68,47 @@ async function fixture(tmp: string) {
   return { dir, store, config, runtime, origin, headers, call };
 }
 
+test("API routing preserves authentication, CSRF and missing-resource error precedence", async () => {
+  const tmp = mkdtempSync(join(tmpdir(), "hoist-api-routing-"));
+  const f = await fixture(tmp);
+  try {
+    for (const path of ["/api/unknown", "/api/projects/missing/script"]) {
+      const anonymous = await fetch(f.origin + path);
+      expect(anonymous.status).toBe(401);
+      expect(await anonymous.json()).toEqual({ error: "Login required" });
+      expect(anonymous.headers.get("cache-control")).toBe("no-store");
+      const authenticated = await f.call(path);
+      expect(authenticated.status).toBe(404);
+      expect(authenticated.headers.get("x-content-type-options")).toBe(
+        "nosniff",
+      );
+    }
+    const rejected = await f.call(
+      "/api/unknown",
+      "POST",
+      {},
+      {
+        "X-CSRF-Token": "invalid",
+      },
+    );
+    expect(rejected.status).toBe(403);
+    expect(await rejected.json()).toEqual({ error: "CSRF token rejected" });
+    expect((await f.call("/api/unknown", "POST", {})).status).toBe(404);
+    const missing = await f.call("/api/projects/missing/deploy", "POST", {});
+    expect(missing.status).toBe(404);
+    expect(await missing.json()).toEqual({ error: "Project not found" });
+    const listing = await (await f.call("/api/projects")).json();
+    expect(listing.managementBusy).toBe(false);
+    expect(listing.uploading).toBe(false);
+    expect(listing.projects).toEqual([]);
+    expect((await f.call("/api/logout", "POST")).status).toBe(200);
+    expect((await f.call("/api/me")).status).toBe(401);
+  } finally {
+    await f.runtime.stop();
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
 test("SQLite defaults, settings CLI validation, runtime locking and single administrator", async () => {
   const tmp = mkdtempSync(join(tmpdir(), "hoist-config-"));
   const store = new Store(tmp);

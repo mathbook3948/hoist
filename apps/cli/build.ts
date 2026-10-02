@@ -1,5 +1,6 @@
-import { mkdirSync, readdirSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 import { resolve, join } from "node:path";
+import { assetFiles } from "@hoist/web/asset-files";
 
 const target = process.argv[2];
 if (target !== undefined && target !== "bun-linux-x64") {
@@ -16,16 +17,7 @@ const webBuild = Bun.spawn([process.execPath, "run", "build"], {
 });
 if (await webBuild.exited) throw new Error("Web build failed");
 const webDist = join(webRoot, "dist");
-const files: string[] = [];
-function collect(dir: string, prefix = "") {
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    const relative = `${prefix}${entry.name}`;
-    if (entry.isDirectory()) collect(join(dir, entry.name), `${relative}/`);
-    else if (entry.isFile()) files.push(relative);
-  }
-}
-collect(webDist);
-files.sort();
+const files = assetFiles(webDist).sort();
 const index = files.indexOf("index.html");
 if (index < 0) throw new Error("Web build has no index.html");
 const embeddedModule = [

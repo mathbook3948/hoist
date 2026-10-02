@@ -10,7 +10,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, test, vi } from "vitest";
 import { App } from "../src/App";
 import { DataTable } from "../src/components/DataTable";
-import type { ProjectView } from "../src/console";
+import type { ProjectView } from "../src/console-state";
 
 const artifact = {
   id: "a1",

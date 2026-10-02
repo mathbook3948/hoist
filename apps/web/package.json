@@ -10,6 +10,7 @@
     "test": "vitest run"
   },
   "exports": {
+    "./asset-files": "./src/asset-files.ts",
     "./assets": "./src/assets.ts"
   },
   "dependencies": {

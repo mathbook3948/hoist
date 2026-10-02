@@ -475,7 +475,15 @@ test("a symlinked data-directory ancestor cannot register an uploaded artifact a
         "--data-dir",
         join(tmp, "alias", "data"),
       ]),
-    ).rejects.toThrow("cannot be registered");
+    ).rejects.toThrow(
+      "Only this project's deploy.sh can run inside project data",
+    );
+    const store = new Store(canonical);
+    try {
+      expect(store.getProject("demo")).toBeNull();
+    } finally {
+      store.close();
+    }
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }

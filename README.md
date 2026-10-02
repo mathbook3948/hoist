@@ -209,12 +209,14 @@ Bun workspaces로 세 앱을 관리합니다. 서버는 독립 실행할 수 있
 apps/
   cli/                       @hoist/cli
     src/index.ts             CLI 실행 진입점
-    src/main.ts              계정·프로젝트·설정 명령
+    src/main.ts              인수 해석·데이터 경로·DB 잠금과 정리
+    src/commands.ts          계정·프로젝트·설정 명령
     build.ts                 Vite 빌드 후 단일 실행파일 생성
   server/                    @hoist/server
     src/index.ts             독립 서버 진입점
     src/runtime.ts           PID 잠금과 서버 시작·종료
-    src/server.ts            HTTP·정적 파일·API 연결
+    src/server.ts            HTTP 접근 검사·정적 파일·서버 시작과 종료
+    src/api.ts               인증·프로젝트·업로드·배포 API와 실행 상태
     src/store.ts             SQLite 저장소와 자동 마이그레이션
     src/migrations/          순서가 고정된 SQL 마이그레이션
     src/auth.ts              인증과 세션
@@ -225,9 +227,12 @@ apps/
     index.html               Vite 진입 HTML
     src/App.tsx              React 앱 진입 화면
     src/components/          로그인·프로젝트·배포·로그 화면과 폼
-    src/console.ts           세션·API·업로드·배포 상태와 폴링
+    src/console.ts           세션·업로드·배포 흐름과 폴링
+    src/console-state.ts     화면 상태·초기값·URL 해석
+    src/api.ts               HTTP 요청·응답과 API 오류 처리
     src/style.css            화면 스타일
     src/assets.ts            서버에서 Vite 빌드 파일 읽기
+    src/asset-files.ts       서버와 실행파일 빌드의 공용 파일 탐색
     vite.config.ts           React HMR·개발 API 프록시·테스트 설정
     tests/                   React Testing Library 컴포넌트 테스트
     dist/                    Vite 빌드 결과 (Git 제외)

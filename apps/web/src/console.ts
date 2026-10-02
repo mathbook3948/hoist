@@ -1,100 +1,32 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type {
   Artifact,
-  Config,
   Deployment,
   Project,
   ProjectInput,
 } from "../../server/src/models";
 import { byNewest, isActive } from "./display";
-
-export type ProjectView = Project & {
-  artifacts: Artifact[];
-  deployments: Deployment[];
-  running: string | null;
-};
-type Listing = {
-  projects: ProjectView[];
-  limits: Pick<Config, "maxArtifactBytes" | "maxStorageBytes">;
-  uploading: boolean;
-  managementBusy: boolean;
-};
-type State = {
-  loadingProjects: boolean;
-  booting: boolean;
-  user: string | null;
-  csrf: string;
-  projects: ProjectView[];
-  projectId: string | null;
-  deploymentId: string | null;
-  deployment: Deployment | null;
-  limits: Listing["limits"] | null;
-  serverBusy: boolean;
-  managementBusy: boolean;
-  file: File | null;
-  artifactId: string;
-  version: string;
-  busy: string | null;
-  log: string;
-  loadingLog: boolean;
-  notice: string;
-  noticeError: boolean;
-  loginError: string;
-  refresh: number;
-  visible: boolean;
-};
-const route = () => {
-  const [projectId, deploymentId] = window.location.pathname
-    .slice(1)
-    .split("/");
-  return { projectId: projectId || null, deploymentId: deploymentId || null };
-};
-const initial = (): State => ({
-  loadingProjects: true,
-  booting: true,
-  user: null,
-  csrf: "",
-  projects: [],
-  ...route(),
-  deployment: null,
-  limits: null,
-  serverBusy: false,
-  managementBusy: false,
-  file: null,
-  artifactId: "",
-  version: "",
-  busy: null,
-  log: "배포를 시작하거나 이력에서 항목을 선택하면 로그가 표시됩니다",
-  loadingLog: false,
-  notice: "",
-  noticeError: false,
-  loginError: "",
-  refresh: 0,
-  visible: !document.hidden,
-});
-class APIError extends Error {
-  constructor(
-    message: string,
-    public status: number,
-  ) {
-    super(message);
-  }
-}
-const describe = (error: unknown) =>
-  error instanceof TypeError
-    ? "서버에 연결할 수 없습니다. 연결 상태를 확인한 뒤 다시 시도해 주세요"
-    : error instanceof Error
-      ? error.message
-      : "요청을 완료하지 못했습니다";
-type RequestOptions = RequestInit & { json?: unknown };
+import {
+  APIError,
+  describeError,
+  requestJSON,
+  type RequestOptions,
+} from "./api";
+import {
+  DEFAULT_LOG,
+  initialConsoleState,
+  readRoute,
+  type ConsoleState,
+  type Listing,
+} from "./console-state";
 
 export function useConsole() {
-  const [state, setState] = useState(initial);
+  const [state, setState] = useState(initialConsoleState);
   const current = useRef(state);
   const session = useRef(0);
   const mounted = useRef(false);
   const navigation = useRef(0);
-  const update = useCallback((patch: Partial<State>) => {
+  const update = useCallback((patch: Partial<ConsoleState>) => {
     if (!mounted.current) return;
     current.current = { ...current.current, ...patch };
     setState(current.current);
@@ -103,7 +35,7 @@ export function useConsole() {
     (expired = false) => {
       session.current++;
       update({
-        ...initial(),
+        ...initialConsoleState(),
         booting: false,
         loginError: expired
           ? "세션이 만료되었습니다. 다시 로그인해 주세요"
@@ -115,31 +47,18 @@ export function useConsole() {
   const request = useCallback(
     async <T>(path: string, options: RequestOptions = {}): Promise<T> => {
       const epoch = session.current;
-      const { json, ...init } = options;
-      const headers = new Headers(init.headers);
-      if (init.method && init.method !== "GET")
-        headers.set("X-CSRF-Token", current.current.csrf);
-      if (json !== undefined) headers.set("Content-Type", "application/json");
-      const response = await fetch(path, {
-        ...init,
-        credentials: "same-origin",
-        headers,
-        body: json !== undefined ? JSON.stringify(json) : init.body,
-      });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) {
+      try {
+        return await requestJSON<T>(path, current.current.csrf, options);
+      } catch (error) {
         if (
-          response.status === 401 &&
+          error instanceof APIError &&
+          error.status === 401 &&
           path !== "/api/login" &&
           epoch === session.current
         )
           clearSession(Boolean(current.current.user));
-        throw new APIError(
-          data.error || `요청을 완료하지 못했습니다 (${response.status})`,
-          response.status,
-        );
+        throw error;
       }
-      return data as T;
     },
     [clearSession],
   );
@@ -152,7 +71,7 @@ export function useConsole() {
       });
       if (epoch !== session.current || !mounted.current) return;
       const before = current.current;
-      const selected = route();
+      const selected = readRoute();
       const project = result.projects.find((p) => p.id === selected.projectId);
       const same = preserve && project?.id === before.projectId;
       const deployments = byNewest(project?.deployments || [], "startedAt");
@@ -172,7 +91,7 @@ export function useConsole() {
             ? before.artifactId
             : artifacts[0]?.id || "",
         ...(!same
-          ? { file: null, version: "", log: initial().log, loadingLog: false }
+          ? { file: null, version: "", log: DEFAULT_LOG, loadingLog: false }
           : {}),
       });
     },
@@ -180,12 +99,12 @@ export function useConsole() {
   );
   const syncRoute = useCallback(() => {
     update({
-      ...route(),
+      ...readRoute(),
       deployment: null,
       file: null,
       version: "",
       artifactId: "",
-      log: initial().log,
+      log: DEFAULT_LOG,
       loadingLog: false,
       loadingProjects: true,
     });
@@ -212,7 +131,7 @@ export function useConsole() {
         void loadProjects(false).catch((error) =>
           update({
             loadingProjects: false,
-            notice: describe(error),
+            notice: describeError(error),
             noticeError: true,
           }),
         );
@@ -242,8 +161,8 @@ export function useConsole() {
         return;
       update(
         current.current.user
-          ? { notice: describe(error), noticeError: true }
-          : { booting: false, loginError: describe(error) },
+          ? { notice: describeError(error), noticeError: true }
+          : { booting: false, loginError: describeError(error) },
       );
     });
     return () => {
@@ -320,7 +239,7 @@ export function useConsole() {
           update(
             error instanceof APIError && error.status === 404
               ? { deployment: null, log: "" }
-              : { notice: describe(error), noticeError: true },
+              : { notice: describeError(error), noticeError: true },
           );
       } finally {
         if (
@@ -340,7 +259,7 @@ export function useConsole() {
     };
     const visibility = () => {
       stop();
-      update({ visible: !document.hidden, loadingLog: false });
+      update({ loadingLog: false });
       if (!document.hidden) void poll();
     };
     document.addEventListener("visibilitychange", visibility);
@@ -361,9 +280,10 @@ export function useConsole() {
     loadProjects,
   ]);
 
-  const runningWithoutLogs =
-    !isActive(state.deployment) &&
-    state.projects.some((p) => p.running || p.deployments.some(isActive));
+  const anyRunning = state.projects.some(
+    (p) => p.running || p.deployments.some(isActive),
+  );
+  const runningWithoutLogs = !isActive(state.deployment) && anyRunning;
   useEffect(() => {
     if (!state.user || !runningWithoutLogs) return;
     let disposed = false;
@@ -373,7 +293,7 @@ export function useConsole() {
         if (!document.hidden) await loadProjects();
       } catch (error) {
         if (!disposed && current.current.user)
-          update({ notice: describe(error), noticeError: true });
+          update({ notice: describeError(error), noticeError: true });
       } finally {
         if (!disposed) timer = setTimeout(poll, 2000);
       }
@@ -404,7 +324,7 @@ export function useConsole() {
       if (valid())
         update({
           loadingProjects: false,
-          notice: describe(error),
+          notice: describeError(error),
           noticeError: true,
         });
       return false;
@@ -424,12 +344,12 @@ export function useConsole() {
     } catch (error) {
       update(
         current.current.user
-          ? { notice: describe(error), noticeError: true }
+          ? { notice: describeError(error), noticeError: true }
           : {
               loginError:
                 error instanceof APIError && error.status === 401
                   ? "사용자 이름 또는 비밀번호를 확인해 주세요"
-                  : describe(error),
+                  : describeError(error),
             },
       );
     } finally {
@@ -437,9 +357,6 @@ export function useConsole() {
     }
   }
   const project = state.projects.find((p) => p.id === state.projectId);
-  const anyRunning = state.projects.some(
-    (p) => p.running || p.deployments.some(isActive),
-  );
   const managementBusy = Boolean(
     state.busy || state.serverBusy || state.managementBusy || anyRunning,
   );
