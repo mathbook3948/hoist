@@ -1315,3 +1315,61 @@ input:disabled {
     margin-bottom: 26px;
   }
 }
+
+.project-management {
+  margin-bottom: 24px;
+  padding: 20px 24px;
+}
+.project-management-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.project-management-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.project-management .muted {
+  margin-top: 5px;
+}
+.project-editor {
+  border-top: 1px solid var(--border);
+  margin-top: 20px;
+  padding-top: 20px;
+}
+.project-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin: 16px 0;
+}
+.project-form-grid input {
+  width: 100%;
+}
+.project-script-field {
+  grid-column: 1 / -1;
+}
+.danger-text {
+  color: var(--danger);
+}
+.upload-limits {
+  margin-bottom: 16px;
+}
+#project-remove-confirm .project-management-actions {
+  margin-top: 16px;
+}
+@media (max-width: 700px) {
+  .project-management-bar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .project-management-actions {
+    justify-content: flex-start;
+  }
+  .project-form-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

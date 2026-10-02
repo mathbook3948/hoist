@@ -34,14 +34,17 @@ const formatDate = (value) => {
     ? dateFormatter.format(date)
     : "시간 정보 없음";
 };
-const formatSize = (value) => {
+export const formatSize = (value) => {
   const size = Number(value);
   if (!Number.isFinite(size) || size < 0) return "";
-  return size < 1024
-    ? `${size} B`
-    : size < 1048576
-      ? `${(size / 1024).toFixed(1)} KB`
-      : `${(size / 1048576).toFixed(1)} MB`;
+  const units = ["B", "KiB", "MiB", "GiB", "TiB"];
+  let index = 0;
+  let amount = size;
+  while (amount >= 1024 && index < units.length - 1) {
+    amount /= 1024;
+    index += 1;
+  }
+  return `${index ? amount.toFixed(1) : amount} ${units[index]}`;
 };
 const make = (tag, className, value) => {
   const element = document.createElement(tag);
@@ -58,6 +61,9 @@ export function createRenderer({ selectProject, selectDeployment }) {
   }
 
   function renderControls() {
+    $("upload-limits").textContent = state.limits
+      ? `파일당 최대 ${formatSize(state.limits.maxArtifactBytes)} · 전체 보관 한도 ${formatSize(state.limits.maxStorageBytes)}`
+      : "";
     const selectedProject = project();
     const running = Boolean(
       selectedProject &&
@@ -69,13 +75,35 @@ export function createRenderer({ selectProject, selectDeployment }) {
     );
     $("refresh-button").disabled = state.busy;
     $("logout-button").disabled = state.busy;
+    const managementBusy = state.busy || state.serverBusy || anyRunning;
+    $("project-add-button").disabled = managementBusy;
+    $("project-edit-button").disabled = managementBusy || !selectedProject;
+    $("project-remove-button").disabled = managementBusy || !selectedProject;
+    $("project-save-button").disabled = managementBusy;
+    $("project-remove-submit").disabled = managementBusy;
+    $("project-cancel-button").disabled = state.busy;
+    $("project-remove-cancel").disabled = state.busy;
+    for (const id of [
+      "project-id-input",
+      "project-name-input",
+      "project-script-input",
+      "project-timeout-input",
+    ])
+      $(id).disabled = managementBusy;
+    $("project-management-hint").textContent = managementBusy
+      ? "업로드·배포가 끝난 뒤 프로젝트 설정을 변경할 수 있어요"
+      : "프로젝트를 등록하거나 선택한 프로젝트의 설정을 관리하세요";
     $("artifact-file").disabled = state.busy || !selectedProject || running;
     $("drop-zone").classList.toggle(
       "disabled",
       state.busy || !selectedProject || running,
     );
     $("upload-button").disabled =
-      state.busy || !selectedProject || !state.file || running;
+      state.busy ||
+      !selectedProject ||
+      !state.file ||
+      running ||
+      Boolean(state.limits && state.file?.size > state.limits.maxArtifactBytes);
     $("artifact-select").disabled =
       state.busy ||
       !selectedProject ||
@@ -112,7 +140,9 @@ export function createRenderer({ selectProject, selectDeployment }) {
       ? formatSize(state.file.size)
       : "프로젝트에서 실행할 빌드 결과물";
     $("upload-hint").textContent = state.file
-      ? "선택한 파일을 서버에 업로드할 준비가 됐어요"
+      ? state.limits && state.file.size > state.limits.maxArtifactBytes
+        ? `파일 크기가 최대 ${formatSize(state.limits.maxArtifactBytes)}를 초과합니다`
+        : "선택한 파일을 서버에 업로드할 준비가 됐어요"
       : "파일 선택 후 서버에 업로드합니다";
     renderControls();
   }

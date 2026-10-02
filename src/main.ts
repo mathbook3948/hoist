@@ -4,12 +4,11 @@ import {
   readFileSync,
   writeFileSync,
   rmSync,
-  realpathSync,
-  lstatSync,
 } from "node:fs";
 import { resolve, join } from "node:path";
-import { initData, atomicJSON, validId } from "./store";
+import { initData, Store, defaultConfig, validId } from "./store";
 import { startServer } from "./server";
+import { parseProject } from "./projects";
 const HELP = `Hoist (Bun, Linux)
   bun src/main.ts init --data-dir /absolute/install-dir
   bun src/main.ts user set USER --password-stdin --data-dir DIR
@@ -18,8 +17,10 @@ const HELP = `Hoist (Bun, Linux)
   bun src/main.ts project set ID --name NAME --script /absolute/trusted.sh --timeout 300 --data-dir DIR
   bun src/main.ts project list --data-dir DIR
   bun src/main.ts project remove ID --data-dir DIR
+  bun src/main.ts config list --data-dir DIR
+  bun src/main.ts config set KEY VALUE --data-dir DIR
   bun src/main.ts serve --data-dir DIR
-The data directory contains config.json, accounts, artifacts and bounded deployment logs.
+The data directory contains hoist.sqlite, deployment files and bounded deployment logs.
 Stop the server before changing accounts, projects or config. Supply passwords over stdin, never argv.
 `;
 export async function main(argv: string[]) {
@@ -46,7 +47,7 @@ export async function main(argv: string[]) {
   }
   const data = options.get("--data-dir") || process.env.HOIST_DATA_DIR;
   if (!data) throw new Error("--data-dir is required");
-  const { dir, configPath, config } = initData(data);
+  const { dir } = initData(data);
   const lock = join(dir, "runtime.lock");
   function acquire() {
     try {
@@ -73,10 +74,13 @@ export async function main(argv: string[]) {
   const command = positional[0];
   if (command === "serve") {
     acquire();
+    let store: Store | undefined;
     let runtime: ReturnType<typeof startServer>;
     try {
-      runtime = startServer(dir, config);
+      store = new Store(dir);
+      runtime = startServer(store);
     } catch (e) {
+      store?.close();
       rmSync(lock, { recursive: true });
       throw e;
     }
@@ -93,22 +97,49 @@ export async function main(argv: string[]) {
     return;
   }
   acquire();
+  let store: Store | undefined;
   try {
+    store = new Store(dir);
     if (command === "init") {
-      console.log(`Configuration ready: ${configPath}`);
+      console.log(`Database ready: ${store.path}`);
       return;
+    }
+    if (command === "config") {
+      if (positional[1] === "list") {
+        console.log(JSON.stringify(store.getConfig(), null, 2));
+        return;
+      }
+      if (positional[1] === "set") {
+        const key = positional[2],
+          value = positional[3];
+        if (!Object.hasOwn(defaultConfig, key) || value === undefined)
+          throw new Error("Unknown/incomplete setting");
+        const config = store.getConfig();
+        const parsed =
+          key === "publicOrigin"
+            ? value === "null"
+              ? null
+              : value
+            : key === "host"
+              ? value
+              : Number(value);
+        store.setConfig({ ...config, [key]: parsed });
+        console.log(`Setting saved: ${key}`);
+        return;
+      }
     }
     if (command === "user") {
       const action = positional[1],
         username = positional[2];
       if (action === "list") {
-        console.log(
-          config.accounts.map((a) => a.username).join("\n") || "(no accounts)",
-        );
+        console.log(store.getAccount()?.username || "(no accounts)");
         return;
       }
       if (!username || !validId(username)) throw new Error("Invalid username");
       if (action === "set") {
+        const old = store.getAccount();
+        if (old && old.username !== username)
+          throw new Error("Only one administrator account is supported");
         if (!options.has("--password-stdin"))
           throw new Error("--password-stdin is required");
         let password = (await Bun.stdin.text()).replace(/\r?\n$/, "");
@@ -125,22 +156,12 @@ export async function main(argv: string[]) {
           cost: 12,
         });
         password = "";
-        const old = config.accounts.find((a) => a.username === username);
-        if (old) old.passwordHash = passwordHash;
-        else {
-          if (config.accounts.length >= 32)
-            throw new Error("Account limit reached");
-          config.accounts.push({ username, passwordHash });
-        }
-        atomicJSON(configPath, config);
+        store.setAccount({ username, passwordHash });
         console.log(`Account saved: ${username}`);
         return;
       }
       if (action === "remove") {
-        config.accounts = config.accounts.filter(
-          (a) => a.username !== username,
-        );
-        atomicJSON(configPath, config);
+        store.removeAccount(username);
         console.log(`Account removed: ${username}`);
         return;
       }
@@ -149,60 +170,35 @@ export async function main(argv: string[]) {
       const action = positional[1],
         id = positional[2];
       if (action === "list") {
-        for (const p of config.projects)
+        for (const p of store.getProjects())
           console.log(`${p.id}\t${p.name}\t${p.script}`);
         return;
       }
       if (!id || !validId(id)) throw new Error("Invalid project ID");
       if (action === "set") {
-        const input = options.get("--script");
-        if (
-          !input ||
-          !input.startsWith("/") ||
-          !existsSync(input) ||
-          !lstatSync(input).isFile()
-        )
-          throw new Error(
-            "--script must name an existing absolute trusted script",
-          );
-        const script = realpathSync(input);
-        if (
-          script.startsWith(join(dir, "projects") + "/") ||
-          script.startsWith(resolve(import.meta.dir, "../public") + "/")
-        )
-          throw new Error(
-            "Uploaded artifacts/web assets cannot be registered as scripts",
-          );
-        const name = options.get("--name") || id;
-        const timeoutSeconds = Number(options.get("--timeout") || 300);
-        if (
-          name.length > 100 ||
-          !Number.isInteger(timeoutSeconds) ||
-          timeoutSeconds < 1 ||
-          timeoutSeconds > 3600
-        )
-          throw new Error("Invalid name/timeout");
-        const project = { id, name, script, timeoutSeconds };
-        const index = config.projects.findIndex((p) => p.id === id);
-        if (index >= 0) config.projects[index] = project;
-        else {
-          if (config.projects.length >= 32)
-            throw new Error("Project limit reached");
-          config.projects.push(project);
-        }
-        atomicJSON(configPath, config);
+        const project = parseProject(
+          dir,
+          resolve(import.meta.dir, "../public"),
+          {
+            id,
+            name: options.get("--name") || id,
+            script: options.get("--script"),
+            timeoutSeconds: Number(options.get("--timeout") || 300),
+          },
+        );
+        store.setProject(project);
         console.log(`Project saved: ${id}`);
         return;
       }
       if (action === "remove") {
-        config.projects = config.projects.filter((p) => p.id !== id);
-        atomicJSON(configPath, config);
+        store.removeProject(id);
         console.log(`Project unregistered: ${id} (data retained)`);
         return;
       }
     }
     throw new Error("Unknown command. Use --help");
   } finally {
+    store?.close();
     rmSync(lock, { recursive: true });
   }
 }

@@ -1,9 +1,10 @@
 import { join } from "node:path";
-import { type Config, type State, loadState, cleanOrphans } from "./store";
+import { Store } from "./store";
 import { HTTPError, fail, json, security, smallJSON } from "./http";
 import { createAuth } from "./auth";
 import { createArtifacts } from "./artifacts";
 import { createDeployments } from "./deployments";
+import { createProjects } from "./projects";
 
 const assets = join(import.meta.dir, "../public");
 const staticPaths = new Set([
@@ -15,22 +16,27 @@ const staticPaths = new Set([
   "/render.js",
   "/polling.js",
   "/events.js",
+  "/projects.js",
 ]);
 
-export function startServer(dir: string, config: Config) {
-  const states = new Map<string, State>();
-  for (const p of config.projects) {
-    const s = loadState(dir, p);
-    cleanOrphans(dir, p, s);
-    states.set(p.id, s);
-  }
+export function startServer(store: Store) {
+  const dir = store.dir;
+  const config = store.getConfig();
+  store.recover();
+  for (const p of store.getProjects(true)) store.trim(p.id, config);
   const origin =
     config.publicOrigin ||
     `http://${config.host === "::1" ? "[::1]" : config.host}:${config.port}`;
 
-  const auth = createAuth(config, origin);
-  const deployments = createDeployments(dir, config, assets);
-  const artifacts = createArtifacts(dir, config, deployments.isRunning);
+  const auth = createAuth(store, config, origin);
+  const deployments = createDeployments(store, config, assets);
+  const artifacts = createArtifacts(store, config, deployments.isRunning);
+  let launching = false;
+  const projects = createProjects(
+    store,
+    assets,
+    () => launching || artifacts.isUploading() || deployments.hasRunning(),
+  );
   let shuttingDown = false;
   const server = Bun.serve({
     hostname: config.host,
@@ -73,37 +79,69 @@ export function startServer(dir: string, config: Config) {
         if (method !== "GET") auth.csrf(req);
         if (path === "/api/projects" && method === "GET")
           return json({
-            projects: config.projects.map((p) => ({
-              id: p.id,
-              name: p.name,
+            managementBusy:
+              launching || artifacts.isUploading() || deployments.hasRunning(),
+            uploading: artifacts.isUploading() || launching,
+            limits: {
+              maxArtifactBytes: config.maxArtifactBytes,
+              maxStorageBytes: config.maxStorageBytes,
+              uploadTimeoutSeconds: config.uploadTimeoutSeconds,
+            },
+            projects: store.getProjects().map((p) => ({
+              ...p,
               running: deployments.isRunning(p.id),
-              ...states.get(p.id),
+              ...store.getState(p.id),
             })),
           });
+        if (path === "/api/projects" && method === "POST")
+          return json({ project: projects.create(await smallJSON(req)) }, 201);
+        const projectMatch = path.match(
+          /^\/api\/projects\/([a-zA-Z0-9_-]{1,64})$/,
+        );
+        if (projectMatch) {
+          if (method === "PUT")
+            return json({
+              project: projects.update(projectMatch[1], await smallJSON(req)),
+            });
+          if (method === "DELETE") {
+            projects.remove(projectMatch[1]);
+            return json({ ok: true, dataRetained: true });
+          }
+        }
         const match = path.match(
           /^\/api\/projects\/([a-zA-Z0-9_-]{1,64})\/(artifacts|deploy|deployments)(?:\/([a-zA-Z0-9_-]{1,64})(?:\/(cancel))?)?$/,
         );
         if (!match) fail(404, "Not found");
-        const p = config.projects.find((p) => p.id === match[1]);
+        const p = store.getProject(match[1]);
         if (!p) fail(404, "Project not found");
-        const s = states.get(p.id)!;
-        if (method === "POST" && match[2] === "artifacts" && !match[3])
-          return json({ artifact: await artifacts.upload(req, p, s) }, 201);
+        if (method === "POST" && match[2] === "artifacts" && !match[3]) {
+          if (launching) fail(409, "Deployment request busy");
+          return json({ artifact: await artifacts.upload(req, p) }, 201);
+        }
         if (method === "POST" && match[2] === "deploy" && !match[3]) {
           if (artifacts.isUploading()) fail(409, "Upload busy");
-          const b = await smallJSON(req);
-          if (typeof b.artifactId !== "string") fail(400, "Artifact required");
-          return json(
-            { deployment: deployments.launch(p, s, b.artifactId, b.version) },
-            202,
-          );
+          if (launching || deployments.hasRunning())
+            fail(409, "A deployment is already running; wait for it to finish");
+          launching = true;
+          try {
+            const b = await smallJSON(req);
+            if (shuttingDown) fail(503, "Shutting down");
+            if (typeof b.artifactId !== "string")
+              fail(400, "Artifact required");
+            return json(
+              { deployment: deployments.launch(p, b.artifactId, b.version) },
+              202,
+            );
+          } finally {
+            launching = false;
+          }
         }
         if (match[2] === "deployments" && match[3]) {
-          deployments.get(p, s, match[3]);
+          deployments.get(p, match[3]);
           if (method === "GET" && !match[4])
-            return json(deployments.read(p, s, match[3]));
+            return json(deployments.read(p, match[3]));
           if (method === "POST" && match[4] === "cancel") {
-            deployments.cancel(p, s, match[3]);
+            deployments.cancel(p, match[3]);
             return json({ ok: true });
           }
         }
@@ -120,12 +158,14 @@ export function startServer(dir: string, config: Config) {
   });
   const stop = async () => {
     shuttingDown = true;
+    artifacts.shutdown();
     deployments.cancelAll();
     await server.stop(true);
-    await deployments.waitForIdle();
+    await Promise.all([deployments.waitForIdle(), artifacts.waitForIdle()]);
+    store.close();
   };
   console.log(`Hoist: ${origin} (bind ${config.host}:${config.port})`);
-  if (!config.accounts.length)
+  if (!store.getAccount())
     console.log(
       "No accounts configured. Stop server and add an account using CLI.",
     );

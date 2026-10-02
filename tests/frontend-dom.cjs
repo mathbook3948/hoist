@@ -52,6 +52,9 @@ class Element {
   setAttribute(name, value) {
     this[name] = value;
   }
+  focus() {
+    this.focused = true;
+  }
   addEventListener(name, fn) {
     (this.events[name] ||= []).push(fn);
   }
@@ -65,7 +68,11 @@ class Element {
   }
 }
 
-async function fixture({ authenticated = true, projects = null } = {}) {
+async function fixture({
+  authenticated = true,
+  projects = null,
+  limits = { maxArtifactBytes: 1024 ** 3, maxStorageBytes: 100 * 1024 ** 3 },
+} = {}) {
   const elements = new Map(),
     generated = [],
     requests = [],
@@ -105,6 +112,10 @@ async function fixture({ authenticated = true, projects = null } = {}) {
     },
   ];
   const logs = new Map();
+  for (const row of rows) {
+    row.script ??= "/opt/hoist/scripts/deploy.sh";
+    row.timeoutSeconds ??= 300;
+  }
   const response = (data, status = 200) => ({
     ok: status < 400,
     status,
@@ -135,7 +146,35 @@ async function fixture({ authenticated = true, projects = null } = {}) {
       isAuthenticated = false;
       return response({ ok: true });
     }
-    if (path === "/api/projects") return response({ projects: rows });
+    if (path === "/api/projects") {
+      if (options.method === "POST") {
+        const input = JSON.parse(options.body);
+        if (rows.some((row) => row.id === input.id))
+          return response({ error: "Project ID already exists" }, 409);
+        const project = {
+          ...input,
+          artifacts: [],
+          deployments: [],
+          running: false,
+        };
+        rows.push(project);
+        return response({ project }, 201);
+      }
+      return response({ projects: rows, limits, uploading: false });
+    }
+    const projectRoute = path.match(/^\/api\/projects\/([^/]+)$/);
+    if (projectRoute) {
+      const index = rows.findIndex((row) => row.id === projectRoute[1]);
+      if (index < 0) return response({ error: "Project not found" }, 404);
+      if (options.method === "PUT") {
+        Object.assign(rows[index], JSON.parse(options.body));
+        return response({ project: rows[index] });
+      }
+      if (options.method === "DELETE") {
+        rows.splice(index, 1);
+        return response({ ok: true, dataRetained: true });
+      }
+    }
     const match = path.match(/^\/api\/projects\/([^/]+)\/(.*)$/),
       project = match && rows.find((row) => row.id === match[1]);
     if (!project) return response({ error: "Not found" }, 404);
@@ -457,4 +496,100 @@ test("expired session returns to login and stops pending polling", async () => {
   assert.equal(f.el("login-view").hidden, false);
   assert.equal(f.el("login-error").hidden, false);
   assert.equal(f.timers.size, 0);
+});
+
+test("empty workspace can register and select a project through the web", async () => {
+  const f = await fixture({ projects: [] });
+  assert.equal(f.el("empty-projects").hidden, false);
+  assert.equal(f.el("project-add-button").disabled, false);
+  await f.emit("project-add-button", "click");
+  assert.equal(f.el("project-editor").hidden, false);
+  f.el("project-id-input").value = "new-project";
+  f.el("project-name-input").value = "새 프로젝트";
+  f.el("project-script-input").value = "/opt/hoist/scripts/new.sh";
+  f.el("project-timeout-input").value = "600";
+  await f.emit("project-form", "submit");
+  const request = f.requests.find(
+    (r) => r.path === "/api/projects" && r.method === "POST",
+  );
+  assert.equal(request.headers.get("X-CSRF-Token"), "fixture-token");
+  assert.equal(JSON.parse(request.body).timeoutSeconds, 600);
+  assert.equal(f.el("project-title").textContent, "새 프로젝트");
+  assert.equal(f.el("empty-projects").hidden, true);
+  assert.equal(f.el("project-editor").hidden, true);
+});
+
+test("project settings preserve identity and update the selected project", async () => {
+  const f = await fixture();
+  await f.emit("project-edit-button", "click");
+  assert.equal(f.el("project-id-input").readOnly, true);
+  assert.equal(
+    f.el("project-script-input").value,
+    "/opt/hoist/scripts/deploy.sh",
+  );
+  f.el("project-name-input").value = "변경된 프로젝트";
+  await f.emit("project-form", "submit");
+  assert.equal(f.el("project-title").textContent, "변경된 프로젝트");
+  assert.equal(f.el("artifact-select").value, "a1");
+  assert.ok(
+    f.requests.some((r) => r.path === "/api/projects/p1" && r.method === "PUT"),
+  );
+});
+
+test("project removal requires a separate confirmation and selects another project", async () => {
+  const f = await fixture();
+  await f.emit("project-remove-button", "click");
+  assert.equal(f.el("project-remove-confirm").hidden, false);
+  assert.match(
+    f.el("project-remove-description").textContent,
+    /파일과 배포 이력은 보관/,
+  );
+  assert.equal(
+    f.requests.some((r) => r.method === "DELETE"),
+    false,
+  );
+  await f.emit("project-remove-cancel", "click");
+  assert.equal(f.el("project-remove-confirm").hidden, true);
+  await f.emit("project-remove-button", "click");
+  await f.emit("project-remove-submit", "click");
+  assert.equal(
+    f.el("project-title").textContent,
+    "<img src=x onerror=alert(1)>",
+  );
+  assert.equal(f.rows.length, 1);
+  assert.equal(f.el("project-remove-confirm").hidden, true);
+});
+
+test("project changes are disabled during deployments and API errors keep the editor open", async () => {
+  const f = await fixture();
+  await f.emit("project-add-button", "click");
+  f.el("project-id-input").value = "p1";
+  f.el("project-name-input").value = "Duplicate";
+  f.el("project-script-input").value = "/opt/hoist/scripts/deploy.sh";
+  await f.emit("project-form", "submit");
+  assert.equal(f.el("project-editor").hidden, false);
+  assert.match(f.el("notice-text").textContent, /already exists/);
+  assert.equal(f.el("project-save-button").disabled, false);
+  await f.emit("project-cancel-button", "click");
+  f.el("version-input").value = "v1";
+  await f.emit("version-input", "input");
+  await f.emit("deploy-form", "submit");
+  assert.equal(f.el("project-add-button").disabled, true);
+  assert.equal(f.el("project-edit-button").disabled, true);
+  assert.equal(f.el("project-remove-button").disabled, true);
+});
+
+test("GiB upload limits are displayed and oversized files are rejected before sending", async () => {
+  const f = await fixture();
+  assert.match(f.el("upload-limits").textContent, /1\.0 GiB/);
+  f.el("artifact-file").files = [{ name: "image.tar", size: 1024 ** 3 + 1 }];
+  await f.emit("artifact-file", "change");
+  assert.match(f.el("file-detail").textContent, /GiB/);
+  assert.match(f.el("upload-hint").textContent, /초과/);
+  assert.equal(f.el("upload-button").disabled, true);
+  await f.emit("upload-form", "submit");
+  assert.equal(
+    f.requests.some((r) => r.path.endsWith("/artifacts")),
+    false,
+  );
 });

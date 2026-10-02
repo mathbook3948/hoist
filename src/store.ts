@@ -1,74 +1,30 @@
+import { Database } from "bun:sqlite";
 import {
   mkdirSync,
-  readFileSync,
-  writeFileSync,
-  renameSync,
   existsSync,
   chmodSync,
   lstatSync,
   readdirSync,
   unlinkSync,
   realpathSync,
+  openSync,
+  closeSync,
 } from "node:fs";
-import { resolve, join, isAbsolute } from "node:path";
-import { randomUUID } from "node:crypto";
-export type Account = { username: string; passwordHash: string };
-export type Project = {
-  id: string;
-  name: string;
-  script: string;
-  timeoutSeconds: number;
-};
-export type Config = {
-  version: 1;
-  host: string;
-  port: number;
-  publicOrigin: string | null;
-  maxArtifactBytes: number;
-  maxStorageBytes: number;
-  artifactRetention: number;
-  historyRetention: number;
-  maxLogBytes: number;
-  sessionHours: number;
-  accounts: Account[];
-  projects: Project[];
-};
-export type Artifact = {
-  id: string;
-  name: string;
-  size: number;
-  createdAt: string;
-};
-export type Deployment = {
-  id: string;
-  artifactId: string;
-  version: string;
-  status:
-    | "running"
-    | "succeeded"
-    | "failed"
-    | "cancelled"
-    | "timed_out"
-    | "interrupted";
-  startedAt: string;
-  finishedAt?: string;
-  exitCode?: number | null;
-};
-export type State = { artifacts: Artifact[]; deployments: Deployment[] };
-export const validId = (v: string) => /^[a-zA-Z0-9_-]{1,64}$/.test(v);
-export function atomicJSON(path: string, value: unknown) {
-  const tmp = `${path}.${randomUUID()}.tmp`;
-  writeFileSync(tmp, JSON.stringify(value, null, 2) + "\n", {
-    mode: 0o600,
-    flag: "wx",
-  });
-  renameSync(tmp, path);
-}
-export function readJSON(path: string) {
-  if (lstatSync(path).size > 1024 * 1024)
-    throw new Error("Configuration/state too large");
-  return JSON.parse(readFileSync(path, "utf8"));
-}
+import { resolve, join } from "node:path";
+import { schema } from "./schema";
+import {
+  type Account,
+  type Project,
+  type Config,
+  type Artifact,
+  type Deployment,
+  type State,
+  validId,
+  defaultConfig,
+  validateConfig,
+} from "./models";
+export * from "./models";
+
 export function initData(input: string) {
   let dir = resolve(input);
   mkdirSync(dir, { recursive: true, mode: 0o700 });
@@ -76,135 +32,265 @@ export function initData(input: string) {
     throw new Error("Data directory must not be a symlink");
   dir = realpathSync(dir);
   chmodSync(dir, 0o700);
-  const configPath = join(dir, "config.json");
-  if (!existsSync(configPath))
-    atomicJSON(configPath, {
-      version: 1,
-      host: "127.0.0.1",
-      port: 3000,
-      publicOrigin: null,
-      maxArtifactBytes: 100 * 1024 * 1024,
-      maxStorageBytes: 512 * 1024 * 1024,
-      artifactRetention: 5,
-      historyRetention: 30,
-      maxLogBytes: 64 * 1024,
-      sessionHours: 8,
-      accounts: [],
-      projects: [],
-    } satisfies Config);
-  const config: Config = readJSON(configPath);
-  validate(config);
   mkdirSync(join(dir, "projects"), { mode: 0o700, recursive: true });
-  return { dir, configPath, config };
-}
-function validate(c: Config) {
-  if (
-    c.version !== 1 ||
-    !Array.isArray(c.accounts) ||
-    !Array.isArray(c.projects) ||
-    c.accounts.length > 32 ||
-    c.projects.length > 32
-  )
-    throw new Error("Invalid config version/accounts/projects");
-  if (!["127.0.0.1", "::1", "localhost"].includes(c.host) && !c.publicOrigin)
-    throw new Error(
-      "Non-loopback binding requires an explicit HTTPS publicOrigin and protected reverse proxy",
-    );
-  if (
-    c.publicOrigin &&
-    (new URL(c.publicOrigin).origin !== c.publicOrigin ||
-      new URL(c.publicOrigin).protocol !== "https:")
-  )
-    throw new Error("publicOrigin must be an HTTPS origin with no path");
-  for (const [key, min, max] of [
-    ["port", 1, 65535],
-    ["maxArtifactBytes", 1, 1024 * 1024 * 1024],
-    ["maxStorageBytes", 1, 16 * 1024 * 1024 * 1024],
-    ["artifactRetention", 1, 100],
-    ["historyRetention", 1, 100],
-    ["maxLogBytes", 1024, 1024 * 1024],
-    ["sessionHours", 1, 24],
-  ] as const)
-    if (!Number.isInteger(c[key]) || c[key] < min || c[key] > max)
-      throw new Error(`Invalid ${key}`);
-  const usernames = new Set();
-  for (const a of c.accounts) {
-    if (
-      !validId(a.username) ||
-      typeof a.passwordHash !== "string" ||
-      !/^\$2[aby]\$/.test(a.passwordHash) ||
-      usernames.has(a.username)
-    )
-      throw new Error("Invalid/duplicate account");
-    usernames.add(a.username);
-  }
-  const ids = new Set();
-  for (const p of c.projects) {
-    if (
-      !validId(p.id) ||
-      ids.has(p.id) ||
-      typeof p.name !== "string" ||
-      p.name.length > 100 ||
-      !isAbsolute(p.script) ||
-      !Number.isInteger(p.timeoutSeconds) ||
-      p.timeoutSeconds < 1 ||
-      p.timeoutSeconds > 3600
-    )
-      throw new Error("Invalid/duplicate project");
-    ids.add(p.id);
-    if (p.script.startsWith(join(resolve("."), "public")))
-      throw new Error("Scripts must not be web assets");
-  }
+  return { dir };
 }
 export function projectDir(dir: string, id: string) {
   if (!validId(id)) throw new Error("Invalid project");
   return join(dir, "projects", id);
 }
-export function loadState(dir: string, p: Project): State {
-  const base = projectDir(dir, p.id);
-  mkdirSync(base, { recursive: true, mode: 0o700 });
-  for (const d of ["artifacts", "logs"])
-    mkdirSync(join(base, d), { mode: 0o700, recursive: true });
-  const path = join(base, "state.json");
-  const state: State = existsSync(path)
-    ? readJSON(path)
-    : { artifacts: [], deployments: [] };
-  if (
-    !Array.isArray(state.artifacts) ||
-    !Array.isArray(state.deployments) ||
-    state.artifacts.length > 100 ||
-    state.deployments.length > 100 ||
-    state.artifacts.some(
-      (a) =>
-        !validId(a.id) ||
-        typeof a.name !== "string" ||
-        !Number.isInteger(a.size) ||
-        a.size < 0,
-    ) ||
-    state.deployments.some((d) => !validId(d.id))
-  )
-    throw new Error("Invalid state");
-  for (const d of state.deployments)
-    if (d.status === "running") {
-      d.status = "interrupted";
-      d.finishedAt = new Date().toISOString();
-    }
-  atomicJSON(path, state);
-  return state;
-}
-export function saveState(dir: string, p: Project, s: State) {
-  atomicJSON(join(projectDir(dir, p.id), "state.json"), s);
-}
-export function cleanOrphans(dir: string, p: Project, s: State) {
-  const base = projectDir(dir, p.id);
-  for (const file of readdirSync(join(base, "artifacts")))
-    if (!s.artifacts.some((a) => file === a.id + ".bin"))
-      unlinkSync(join(base, "artifacts", file));
-  for (const file of readdirSync(join(base, "logs")))
-    if (!s.deployments.some((d) => file === d.id + ".log"))
-      unlinkSync(join(base, "logs", file));
+export function prepareProject(dir: string, id: string) {
+  for (const folder of ["artifacts", "logs"])
+    mkdirSync(join(projectDir(dir, id), folder), {
+      mode: 0o700,
+      recursive: true,
+    });
 }
 
+type DeploymentRow = Omit<Deployment, "finishedAt" | "exitCode"> & {
+  finishedAt: string | null;
+  exitCode: number | null;
+};
+function deploymentFromRow({
+  finishedAt,
+  exitCode,
+  ...d
+}: DeploymentRow): Deployment {
+  return finishedAt === null ? d : { ...d, finishedAt, exitCode };
+}
+
+export class Store {
+  readonly dir: string;
+  readonly path: string;
+  private db: Database;
+  private closed = false;
+  constructor(input: string) {
+    this.dir = initData(input).dir;
+    this.path = join(this.dir, "hoist.sqlite");
+    if (!existsSync(this.path)) closeSync(openSync(this.path, "wx", 0o600));
+    if (!lstatSync(this.path).isFile())
+      throw new Error("Database must be a regular file");
+    chmodSync(this.path, 0o600);
+    this.db = new Database(this.path, { strict: true });
+    try {
+      this.db.exec(
+        "PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000; PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL;",
+      );
+      this.db.transaction(() => {
+        this.db.exec(schema);
+        this.db
+          .query(
+            `INSERT OR IGNORE INTO settings VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          )
+          .run(
+            defaultConfig.host,
+            defaultConfig.port,
+            defaultConfig.publicOrigin,
+            defaultConfig.maxArtifactBytes,
+            defaultConfig.maxStorageBytes,
+            defaultConfig.uploadTimeoutSeconds,
+            defaultConfig.artifactRetention,
+            defaultConfig.historyRetention,
+            defaultConfig.maxLogBytes,
+            defaultConfig.sessionHours,
+          );
+      })();
+      this.getConfig();
+    } catch (e) {
+      this.db.close();
+      throw e;
+    }
+  }
+  close() {
+    if (!this.closed) {
+      this.db.close();
+      this.closed = true;
+    }
+  }
+  getConfig(): Config {
+    const { id, ...config } = this.db
+      .query("SELECT * FROM settings WHERE id = 1")
+      .get() as Config & { id: number };
+    validateConfig(config);
+    return config;
+  }
+  setConfig(config: Config) {
+    validateConfig(config);
+    this.db
+      .query(
+        `UPDATE settings SET host=?, port=?, publicOrigin=?, maxArtifactBytes=?, maxStorageBytes=?,
+      uploadTimeoutSeconds=?, artifactRetention=?, historyRetention=?, maxLogBytes=?, sessionHours=? WHERE id=1`,
+      )
+      .run(
+        config.host,
+        config.port,
+        config.publicOrigin,
+        config.maxArtifactBytes,
+        config.maxStorageBytes,
+        config.uploadTimeoutSeconds,
+        config.artifactRetention,
+        config.historyRetention,
+        config.maxLogBytes,
+        config.sessionHours,
+      );
+  }
+  getAccount(): Account | null {
+    return this.db
+      .query("SELECT username, passwordHash FROM administrator WHERE id=1")
+      .get() as Account | null;
+  }
+  setAccount(account: Account) {
+    if (!validId(account.username) || !/^\$2[aby]\$/.test(account.passwordHash))
+      throw new Error("Invalid account");
+    this.db.transaction(() => {
+      const old = this.getAccount();
+      if (old && old.username !== account.username)
+        throw new Error("Only one administrator account is supported");
+      this.db
+        .query(
+          "INSERT INTO administrator VALUES (1, ?, ?) ON CONFLICT(id) DO UPDATE SET passwordHash=excluded.passwordHash",
+        )
+        .run(account.username, account.passwordHash);
+    })();
+  }
+  removeAccount(username: string) {
+    this.db.query("DELETE FROM administrator WHERE username=?").run(username);
+  }
+  getProjects(includeArchived = false): Project[] {
+    return this.db
+      .query(
+        `SELECT id, name, script, timeoutSeconds FROM projects ${includeArchived ? "" : "WHERE archived=0"} ORDER BY rowid`,
+      )
+      .all() as Project[];
+  }
+  getProject(id: string): Project | null {
+    return this.db
+      .query(
+        "SELECT id, name, script, timeoutSeconds FROM projects WHERE id=? AND archived=0",
+      )
+      .get(id) as Project | null;
+  }
+  setProject(p: Project) {
+    if (!validId(p.id)) throw new Error("Invalid project");
+    prepareProject(this.dir, p.id);
+    this.db.transaction(() => {
+      if (!this.getProject(p.id) && this.getProjects().length >= 32)
+        throw new Error("Project limit reached");
+      this.db
+        .query(
+          `INSERT INTO projects VALUES (?, ?, ?, ?, 0) ON CONFLICT(id) DO UPDATE SET
+        name=excluded.name, script=excluded.script, timeoutSeconds=excluded.timeoutSeconds, archived=0`,
+        )
+        .run(p.id, p.name, p.script, p.timeoutSeconds);
+    })();
+  }
+  removeProject(id: string) {
+    this.db.query("UPDATE projects SET archived=1 WHERE id=?").run(id);
+  }
+  getState(projectId: string): State {
+    return {
+      artifacts: this.db
+        .query(
+          "SELECT id, name, size, createdAt FROM artifacts WHERE projectId=? ORDER BY rowid",
+        )
+        .all(projectId) as Artifact[],
+      deployments: (
+        this.db
+          .query(
+            "SELECT id, artifactId, version, status, startedAt, finishedAt, exitCode FROM deployments WHERE projectId=? ORDER BY rowid",
+          )
+          .all(projectId) as DeploymentRow[]
+      ).map(deploymentFromRow),
+    };
+  }
+  getArtifact(projectId: string, id: string): Artifact | null {
+    return this.db
+      .query(
+        "SELECT id, name, size, createdAt FROM artifacts WHERE projectId=? AND id=?",
+      )
+      .get(projectId, id) as Artifact | null;
+  }
+  addArtifact(projectId: string, a: Artifact) {
+    this.db
+      .query("INSERT INTO artifacts VALUES (?, ?, ?, ?, ?)")
+      .run(a.id, projectId, a.name, a.size, a.createdAt);
+  }
+  getDeployment(projectId: string, id: string): Deployment | undefined {
+    const row = this.db
+      .query(
+        "SELECT id, artifactId, version, status, startedAt, finishedAt, exitCode FROM deployments WHERE projectId=? AND id=?",
+      )
+      .get(projectId, id) as DeploymentRow | null;
+    return row ? deploymentFromRow(row) : undefined;
+  }
+  addDeployment(projectId: string, d: Deployment) {
+    this.db
+      .query("INSERT INTO deployments VALUES (?, ?, ?, ?, ?, ?, NULL, NULL)")
+      .run(d.id, projectId, d.artifactId, d.version, d.status, d.startedAt);
+  }
+  finishDeployment(projectId: string, d: Deployment) {
+    this.db
+      .query(
+        "UPDATE deployments SET status=?, finishedAt=?, exitCode=? WHERE projectId=? AND id=?",
+      )
+      .run(d.status, d.finishedAt ?? null, d.exitCode ?? null, projectId, d.id);
+  }
+  trim(projectId: string, config: Config) {
+    const s = this.getState(projectId);
+    const artifacts = s.artifacts.slice(
+      0,
+      Math.max(0, s.artifacts.length - config.artifactRetention),
+    );
+    const deployments = s.deployments.slice(
+      0,
+      Math.max(0, s.deployments.length - config.historyRetention),
+    );
+    // Commit metadata first. Leftover files are safe to clean on startup after a crash.
+    this.db.transaction(() => {
+      for (const a of artifacts)
+        this.db.query("DELETE FROM artifacts WHERE id=?").run(a.id);
+      for (const d of deployments)
+        this.db.query("DELETE FROM deployments WHERE id=?").run(d.id);
+    })();
+    for (const a of artifacts)
+      this.removeFile(projectId, "artifacts", a.id + ".bin");
+    for (const d of deployments)
+      this.removeFile(projectId, "logs", d.id + ".log");
+  }
+  private removeFile(projectId: string, folder: string, name: string) {
+    const path = join(projectDir(this.dir, projectId), folder, name);
+    if (existsSync(path)) unlinkSync(path);
+  }
+  recover() {
+    this.db
+      .query(
+        "UPDATE deployments SET status='interrupted', finishedAt=? WHERE status='running'",
+      )
+      .run(new Date().toISOString());
+    for (const p of this.getProjects(true)) {
+      prepareProject(this.dir, p.id);
+      const state = this.getState(p.id);
+      for (const [folder, names] of [
+        ["artifacts", new Set(state.artifacts.map((a) => a.id + ".bin"))],
+        ["logs", new Set(state.deployments.map((d) => d.id + ".log"))],
+      ] as const)
+        for (const file of readdirSync(
+          join(projectDir(this.dir, p.id), folder),
+        ))
+          if (!names.has(file)) this.removeFile(p.id, folder, file);
+      // Missing artifacts cannot be deployed; preserve deployment history.
+      for (const a of state.artifacts)
+        if (
+          !existsSync(
+            join(projectDir(this.dir, p.id), "artifacts", a.id + ".bin"),
+          )
+        )
+          this.db.query("DELETE FROM artifacts WHERE id=?").run(a.id);
+    }
+  }
+}
+
+// Count actual disk use, including archived project files and an in-progress upload.
 export function storedArtifactBytes(dir: string) {
   let size = 0;
   const folders = readdirSync(join(dir, "projects"));
@@ -228,17 +314,4 @@ export function storedArtifactBytes(dir: string) {
     }
   }
   return size;
-}
-
-export function trimState(dir: string, config: Config, p: Project, s: State) {
-  while (s.artifacts.length > config.artifactRetention) {
-    const removed = s.artifacts.shift()!;
-    unlinkSync(join(projectDir(dir, p.id), "artifacts", removed.id + ".bin"));
-  }
-  while (s.deployments.length > config.historyRetention) {
-    const removed = s.deployments.shift()!;
-    const log = join(projectDir(dir, p.id), "logs", removed.id + ".log");
-    if (existsSync(log)) unlinkSync(log);
-  }
-  saveState(dir, p, s);
 }

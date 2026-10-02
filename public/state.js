@@ -12,6 +12,8 @@ export const state = {
   epoch: 0,
   loadingDeployment: false,
   logError: "",
+  limits: null,
+  serverBusy: false,
 };
 const activeStatuses = new Set([
   "running",

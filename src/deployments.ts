@@ -12,15 +12,18 @@ import { spawn, type ChildProcess } from "node:child_process";
 import {
   type Config,
   type Project,
-  type State,
+  Store,
   type Deployment,
   projectDir,
-  saveState,
-  trimState,
 } from "./store";
 import { fail } from "./http";
 
-export function createDeployments(dir: string, config: Config, assets: string) {
+export function createDeployments(
+  store: Store,
+  config: Config,
+  assets: string,
+) {
+  const dir = store.dir;
   const runs = new Map<
     string,
     {
@@ -29,10 +32,10 @@ export function createDeployments(dir: string, config: Config, assets: string) {
       cancel: (reason: "cancelled" | "timed_out") => void;
     }
   >();
-  function launch(p: Project, s: State, artifactId: string, version: string) {
+  function launch(p: Project, artifactId: string, version: string) {
     if (runs.size)
       fail(409, "A deployment is already running; wait for it to finish");
-    const a = s.artifacts.find((a) => a.id === artifactId);
+    const a = store.getArtifact(p.id, artifactId);
     if (!a) fail(404, "Artifact not found");
     if (
       typeof version !== "string" ||
@@ -59,8 +62,8 @@ export function createDeployments(dir: string, config: Config, assets: string) {
     };
     const logPath = join(projectDir(dir, p.id), "logs", deployment.id + ".log");
     writeFileSync(logPath, "", { mode: 0o600, flag: "wx" });
-    s.deployments.push(deployment);
-    trimState(dir, config, p, s);
+    store.addDeployment(p.id, deployment);
+    store.trim(p.id, config);
     let written = 0,
       truncated = false;
     const capture = (data: Buffer) => {
@@ -98,7 +101,7 @@ export function createDeployments(dir: string, config: Config, assets: string) {
       deployment.status = "failed";
       deployment.finishedAt = new Date().toISOString();
       deployment.exitCode = null;
-      saveState(dir, p, s);
+      store.finishDeployment(p.id, deployment);
       fail(500, "Could not start configured script");
     }
     let reason: "cancelled" | "timed_out" | undefined;
@@ -130,19 +133,19 @@ export function createDeployments(dir: string, config: Config, assets: string) {
       deployment.exitCode = code;
       deployment.finishedAt = new Date().toISOString();
       runs.delete(p.id);
-      saveState(dir, p, s);
+      store.finishDeployment(p.id, deployment);
     });
     return deployment;
   }
 
-  function get(p: Project, s: State, id: string) {
-    const deployment = s.deployments.find((d) => d.id === id);
+  function get(p: Project, id: string) {
+    const deployment = store.getDeployment(p.id, id);
     if (!deployment) fail(404, "Deployment not found");
     return deployment;
   }
 
-  function read(p: Project, s: State, id: string) {
-    const deployment = get(p, s, id);
+  function read(p: Project, id: string) {
+    const deployment = get(p, id);
     const logPath = join(projectDir(dir, p.id), "logs", deployment.id + ".log");
     return {
       deployment,
@@ -150,8 +153,8 @@ export function createDeployments(dir: string, config: Config, assets: string) {
     };
   }
 
-  function cancel(p: Project, s: State, id: string) {
-    const deployment = get(p, s, id);
+  function cancel(p: Project, id: string) {
+    const deployment = get(p, id);
     const run = runs.get(p.id);
     if (!run || run.deployment.id !== deployment.id)
       fail(409, "Deployment is not running");
@@ -177,5 +180,6 @@ export function createDeployments(dir: string, config: Config, assets: string) {
     cancelAll,
     waitForIdle,
     isRunning: (projectId: string) => runs.has(projectId),
+    hasRunning: () => runs.size > 0,
   };
 }

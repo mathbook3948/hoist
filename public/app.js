@@ -3,6 +3,7 @@ import { $, createRenderer } from "./render.js";
 import { createAPI, describeError } from "./api.js";
 import { createPolling } from "./polling.js";
 import { bindEvents } from "./events.js";
+import { bindProjectManagement } from "./projects.js";
 
 const api = createAPI(onSessionExpired);
 const view = createRenderer({
@@ -35,6 +36,8 @@ function showLogin() {
     busy: false,
     loadingDeployment: false,
     logError: "",
+    limits: null,
+    serverBusy: false,
   });
   $("app-view").hidden = true;
   $("boot-view").hidden = true;
@@ -47,6 +50,8 @@ function showLogin() {
   $("log-output").textContent =
     "배포를 시작하거나 이력에서 항목을 선택하면 로그가 표시됩니다";
   $("notice").hidden = true;
+  $("project-editor").hidden = true;
+  $("project-remove-confirm").hidden = true;
   renderFile();
 }
 
@@ -55,6 +60,8 @@ async function loadProjects() {
   const result = await api("/api/projects");
   if (epoch !== state.epoch) return;
   state.projects = Array.isArray(result.projects) ? result.projects : [];
+  state.limits = result.limits || null;
+  state.serverBusy = Boolean(result.uploading);
   if (!state.projects.some((item) => String(item.id) === state.projectId))
     state.projectId = state.projects[0] ? String(state.projects[0].id) : null;
   renderProjects();
@@ -76,8 +83,8 @@ async function startSession() {
   if (deployment) await selectDeployment(String(deployment.id));
 }
 
-async function selectProject(id) {
-  if (state.busy || state.projectId === id) return;
+async function selectProject(id, force = false) {
+  if ((!force && state.busy) || (!force && state.projectId === id)) return;
   stopPolling();
   state.epoch += 1;
   Object.assign(state, {
@@ -90,6 +97,8 @@ async function selectProject(id) {
   });
   $("artifact-file").value = "";
   $("artifact-select").value = "";
+  $("project-editor").hidden = true;
+  $("project-remove-confirm").hidden = true;
   $("version-input").value = "";
   showNotice("");
   renderFile();
@@ -134,6 +143,8 @@ bindEvents({
   startSession,
   loadProjects,
 });
+
+bindProjectManagement({ api, view, action, selectProject });
 
 void startSession().catch((error) => {
   if (error.status === 401) return;

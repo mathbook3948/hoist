@@ -14,7 +14,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
-import { initData, atomicJSON } from "../src/store";
+import { initData, Store } from "../src/store";
 const root = join(import.meta.dir, "..");
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 test("CLI setup, authentication, upload boundaries, deployment argv, locks, bounded logs, cancel, timeout and restart", async () => {
@@ -47,17 +47,20 @@ test("CLI setup, authentication, upload boundaries, deployment argv, locks, boun
   };
   try {
     await cli(["init"]);
-    expect(existsSync(join(data, "config.json"))).toBe(true);
-    expect(statSync(join(data, "config.json")).mode & 0o777).toBe(0o600);
+    expect(existsSync(join(data, "hoist.sqlite"))).toBe(true);
+    expect(existsSync(join(data, "config.json"))).toBe(false);
+    expect(statSync(join(data, "hoist.sqlite")).mode & 0o777).toBe(0o600);
     await cli(["user", "set", "tester", "--password-stdin"], password + "\n");
     mkdirSync(join(tmp, "real"));
     symlinkSync(join(tmp, "real"), join(tmp, "alias"));
     expect(initData(join(tmp, "alias", "nested")).dir).toBe(
       join(tmp, "real", "nested"),
     );
-    const config = JSON.parse(readFileSync(join(data, "config.json"), "utf8"));
-    expect(config.accounts[0].passwordHash).not.toContain(password);
-    expect(config.accounts[0].passwordHash.startsWith("$2")).toBe(true);
+    const initial = new Store(data);
+    const account = initial.getAccount()!;
+    initial.close();
+    expect(account.passwordHash).not.toContain(password);
+    expect(account.passwordHash.startsWith("$2")).toBe(true);
     const script = join(tmp, "deploy.sh");
     const marker = join(tmp, "injected");
     writeFileSync(
@@ -83,12 +86,15 @@ test("CLI setup, authentication, upload boundaries, deployment argv, locks, boun
     const port = reserve.port;
     await reserve.stop(true);
     const origin = `http://127.0.0.1:${port}`;
-    const cfg = JSON.parse(readFileSync(join(data, "config.json"), "utf8"));
+    const settings = new Store(data);
+    const cfg = settings.getConfig();
     cfg.port = port;
     cfg.maxArtifactBytes = 1024 * 1024;
+    cfg.maxStorageBytes = 512 * 1024 * 1024;
     cfg.maxLogBytes = 4096;
     cfg.artifactRetention = 2;
-    atomicJSON(join(data, "config.json"), cfg);
+    settings.setConfig(cfg);
+    settings.close();
     const start = async () => {
       server = Bun.spawn(
         [
@@ -117,6 +123,7 @@ test("CLI setup, authentication, upload boundaries, deployment argv, locks, boun
       ["/render.js", "text/javascript"],
       ["/polling.js", "text/javascript"],
       ["/events.js", "text/javascript"],
+      ["/projects.js", "text/javascript"],
       ["/style.css", "text/css"],
     ]) {
       const r = await fetch(origin + path);
@@ -391,10 +398,10 @@ test("CLI setup, authentication, upload boundaries, deployment argv, locks, boun
       (await fetch(origin + "/api/projects", { headers: { Cookie: cookie } }))
         .status,
     ).toBe(401);
-    expect(
-      JSON.parse(readFileSync(join(data, "projects/demo/state.json"), "utf8"))
-        .deployments.length,
-    ).toBe(5);
+    const restarted = new Store(data);
+    expect(restarted.getState("demo").deployments.length).toBe(5);
+    expect(existsSync(join(data, "projects/demo/state.json"))).toBe(false);
+    restarted.close();
     for (let i = 0; i < 10; i++)
       expect(
         (
@@ -417,10 +424,9 @@ test("CLI setup, authentication, upload boundaries, deployment argv, locks, boun
     await server!.exited;
     server = undefined;
     await cli(["user", "remove", "tester"]);
-    expect(
-      JSON.parse(readFileSync(join(data, "config.json"), "utf8")).accounts
-        .length,
-    ).toBe(0);
+    const removed = new Store(data);
+    expect(removed.getAccount()).toBeNull();
+    removed.close();
   } finally {
     if (server) {
       server.kill("SIGTERM");
@@ -479,7 +485,8 @@ test("a symlinked data-directory ancestor cannot register an uploaded artifact a
 
 test("an unknown username cannot get a session even if dummy verification returns true", async () => {
   const tmp = mkdtempSync(join(tmpdir(), "hoist-auth-"));
-  const { config } = initData(tmp);
+  const store = new Store(tmp);
+  const config = store.getConfig();
   const reserve = Bun.serve({
     hostname: "127.0.0.1",
     port: 0,
@@ -490,7 +497,8 @@ test("an unknown username cannot get a session even if dummy verification return
   const verify = spyOn(Bun.password, "verify").mockResolvedValue(true);
   let runtime: ReturnType<typeof startServer> | undefined;
   try {
-    runtime = startServer(tmp, config);
+    store.setConfig(config);
+    runtime = startServer(store);
     const origin = `http://127.0.0.1:${config.port}`;
     const response = await fetch(origin + "/api/login", {
       method: "POST",
@@ -506,6 +514,7 @@ test("an unknown username cannot get a session even if dummy verification return
   } finally {
     verify.mockRestore();
     if (runtime) await runtime.stop();
+    else store.close();
     rmSync(tmp, { recursive: true, force: true });
   }
 });

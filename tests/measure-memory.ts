@@ -3,11 +3,12 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
-import { initData, atomicJSON } from "../src/store";
+import { Store } from "../src/store";
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const tmp = mkdtempSync(join(tmpdir(), "hoist-rss-"));
 const data = join(tmp, "data");
-const { config } = initData(data);
+const store = new Store(data);
+const config = store.getConfig();
 const reserve = Bun.serve({
   hostname: "127.0.0.1",
   port: 0,
@@ -16,24 +17,21 @@ const reserve = Bun.serve({
 config.port = reserve.port;
 await reserve.stop(true);
 const password = randomBytes(20).toString("hex");
-config.accounts = [
-  {
-    username: "rss-test",
-    passwordHash: await Bun.password.hash(password, {
-      algorithm: "bcrypt",
-      cost: 12,
-    }),
-  },
-];
-config.projects = [
-  {
-    id: "memory",
-    name: "Memory test",
-    script: "/bin/true",
-    timeoutSeconds: 10,
-  },
-];
-atomicJSON(join(data, "config.json"), config);
+store.setAccount({
+  username: "rss-test",
+  passwordHash: await Bun.password.hash(password, {
+    algorithm: "bcrypt",
+    cost: 12,
+  }),
+});
+store.setProject({
+  id: "memory",
+  name: "Memory test",
+  script: "/bin/true",
+  timeoutSeconds: 10,
+});
+store.setConfig(config);
+store.close();
 const p = Bun.spawn(
   [
     process.execPath,
@@ -128,6 +126,7 @@ try {
     JSON.stringify(
       {
         bun: Bun.version,
+        storage: "SQLite WAL metadata; filesystem artifacts and logs",
         platform: process.platform,
         architecture: process.arch,
         scope:

@@ -8,27 +8,28 @@
     "upload": 10
   },
   "coldIdle": {
-    "minKiB": 28044,
-    "maxKiB": 28504,
-    "lastKiB": 28504,
+    "minKiB": 16508,
+    "maxKiB": 17188,
+    "lastKiB": 16540,
     "samples": 99
   },
-  "loginPeakKiB": 29800,
+  "loginPeakKiB": 17084,
   "authenticatedIdle": {
-    "minKiB": 30308,
-    "maxKiB": 30472,
-    "lastKiB": 30472,
-    "samples": 99
+    "minKiB": 17180,
+    "maxKiB": 17184,
+    "lastKiB": 17184,
+    "samples": 100
   },
   "upload": {
     "bytes": 67108864,
-    "durationMs": 1135,
-    "peakKiB": 46624
+    "durationMs": 1164,
+    "peakKiB": 26840
   },
   "postUploadIdle": {
-    "minKiB": 38776,
-    "maxKiB": 38776,
-    "lastKiB": 38776,
-    "samples": 100
-  }
+    "minKiB": 20100,
+    "maxKiB": 20100,
+    "lastKiB": 20100,
+    "samples": 99
+  },
+  "storage": "SQLite WAL metadata; filesystem artifacts and logs"
 }

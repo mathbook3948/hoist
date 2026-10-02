@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import type { Config } from "./store";
+import type { Config, Store } from "./store";
 import { fail, json, smallJSON } from "./http";
 
 const token = () => randomBytes(32).toString("hex");
@@ -15,7 +15,7 @@ const sessionToken = (req: Request) =>
 const dummyHash =
   "$2b$12$TSS.fGeGXRFHYIA9/xLE5ODDaSPtSLFK.AxMgCpSQOXrEG0k.tNYu";
 
-export function createAuth(config: Config, origin: string) {
+export function createAuth(store: Store, config: Config, origin: string) {
   const sessions = new Map<
     string,
     { username: string; csrf: string; expires: number }
@@ -70,7 +70,8 @@ export function createAuth(config: Config, origin: string) {
         Buffer.byteLength(body.password, "utf8") > 72
       )
         fail(400, "Invalid credentials");
-      const a = config.accounts.find((a) => a.username === body.username);
+      const account = store.getAccount();
+      const a = account?.username === body.username ? account : null;
       const verified = await Bun.password.verify(
         body.password,
         a?.passwordHash || dummyHash,

@@ -4,39 +4,44 @@ import {
   closeSync,
   unlinkSync,
   existsSync,
+  fsyncSync,
 } from "node:fs";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import {
   type Config,
   type Project,
-  type State,
+  Store,
   projectDir,
   storedArtifactBytes,
-  trimState,
 } from "./store";
 import { fail } from "./http";
 
 export function createArtifacts(
-  dir: string,
+  store: Store,
   config: Config,
   isDeploying: (projectId: string) => boolean,
 ) {
+  const dir = store.dir;
   let uploading = false;
+  let stopped = false;
+  let activeReader: ReadableStreamDefaultReader<Uint8Array> | undefined;
 
-  async function upload(req: Request, p: Project, s: State) {
+  async function upload(req: Request, p: Project) {
+    if (stopped) fail(503, "Shutting down");
     if (uploading || isDeploying(p.id)) fail(409, "Upload/deployment busy");
     uploading = true;
     const id = randomUUID(),
       target = join(projectDir(dir, p.id), "artifacts", id + ".bin");
     let fd: number | undefined,
       reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+    let committed = false;
     let size = 0,
       timedOut = false;
     const uploadDeadline = setTimeout(() => {
       timedOut = true;
       void reader?.cancel().catch(() => {});
-    }, 300000);
+    }, config.uploadTimeoutSeconds * 1000);
     try {
       let name: string;
       try {
@@ -66,8 +71,10 @@ export function createArtifacts(
       if (!req.body) fail(400, "Artifact body required");
       fd = openSync(target, "wx", 0o600);
       reader = req.body.getReader();
+      activeReader = reader;
       while (true) {
         const chunk = await reader.read();
+        if (stopped) fail(503, "Shutting down");
         if (timedOut) fail(408, "Upload deadline exceeded");
         if (chunk.done) break;
         size += chunk.value.length;
@@ -81,6 +88,7 @@ export function createArtifacts(
           offset += writeSync(fd, chunk.value, offset);
       }
       if (!size) fail(400, "Empty artifact");
+      fsyncSync(fd);
       closeSync(fd);
       fd = undefined;
       const artifact = {
@@ -89,19 +97,31 @@ export function createArtifacts(
         size,
         createdAt: new Date().toISOString(),
       };
-      s.artifacts.push(artifact);
-      trimState(dir, config, p, s);
+      store.addArtifact(p.id, artifact);
+      committed = true;
+      store.trim(p.id, config);
       return artifact;
     } catch (e) {
       if (reader) await reader.cancel().catch(() => {});
       if (fd !== undefined) closeSync(fd);
-      if (existsSync(target)) unlinkSync(target);
+      if (!committed && existsSync(target)) unlinkSync(target);
       throw e;
     } finally {
       clearTimeout(uploadDeadline);
+      activeReader = undefined;
       uploading = false;
     }
   }
 
-  return { upload, isUploading: () => uploading };
+  return {
+    upload,
+    isUploading: () => uploading,
+    shutdown: () => {
+      stopped = true;
+      void activeReader?.cancel().catch(() => {});
+    },
+    waitForIdle: async () => {
+      while (uploading) await new Promise((resolve) => setTimeout(resolve, 50));
+    },
+  };
 }
