@@ -5,6 +5,7 @@
   "scripts": {
     "start": "bun src/main.ts serve",
     "test": "bun test",
+    "test:frontend": "node --experimental-vm-modules tests/frontend-dom.cjs",
     "check": "bun build src/main.ts --target=bun --outfile=/tmp/hoist-check.js",
     "format": "prettier --write .",
     "format:check": "prettier --check ."

@@ -112,6 +112,11 @@ test("CLI setup, authentication, upload boundaries, deployment argv, locks, boun
     for (const [path, mime] of [
       ["/", "text/html"],
       ["/app.js", "text/javascript"],
+      ["/state.js", "text/javascript"],
+      ["/api.js", "text/javascript"],
+      ["/render.js", "text/javascript"],
+      ["/polling.js", "text/javascript"],
+      ["/events.js", "text/javascript"],
       ["/style.css", "text/css"],
     ]) {
       const r = await fetch(origin + path);
@@ -425,7 +430,8 @@ test("CLI setup, authentication, upload boundaries, deployment argv, locks, boun
   }
 }, 30000);
 
-import { smallJSON, startServer } from "../src/server";
+import { smallJSON } from "../src/http";
+import { startServer } from "../src/server";
 test("JSON body absolute deadline cancels a trickling request", async () => {
   let cancelled = false;
   const req = new Request("http://127.0.0.1/", {

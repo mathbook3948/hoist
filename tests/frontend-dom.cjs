@@ -1,12 +1,15 @@
-// Dependency-free frontend regression checks. Run: node tests/frontend-dom.cjs
+// Dependency-free frontend regression checks. Run: bun run test:frontend
 // This DOM/fetch fixture verifies behavior, not layout or real browser semantics.
 const { readFileSync } = require("node:fs");
-const { resolve } = require("node:path");
+const { resolve, dirname } = require("node:path");
 const vm = require("node:vm");
 const assert = require("node:assert/strict");
 const { test } = require("node:test");
 const html = readFileSync(resolve(__dirname, "../public/index.html"), "utf8");
-const script = readFileSync(resolve(__dirname, "../public/app.js"), "utf8");
+const publicDir = resolve(__dirname, "../public");
+const entryScript = html.match(/<script\b[^>]*\bsrc="([^"]+)"[^>]*>/);
+assert.ok(entryScript, "HTML must load a frontend entry script");
+assert.match(entryScript[0], /\btype="module"/);
 
 class Element {
   constructor(tag, id = "") {
@@ -222,7 +225,24 @@ async function fixture({ authenticated = true, projects = null } = {}) {
     JSON,
     console,
   });
-  vm.runInContext(script, context);
+  // A fresh module graph keeps each fixture's state isolated, as in a new page.
+  const modules = new Map();
+  const loadModule = (path) => {
+    if (!modules.has(path))
+      modules.set(
+        path,
+        new vm.SourceTextModule(readFileSync(path, "utf8"), {
+          context,
+          identifier: path,
+        }),
+      );
+    return modules.get(path);
+  };
+  const entry = loadModule(resolve(publicDir, `.${entryScript[1]}`));
+  await entry.link((specifier, parent) =>
+    loadModule(resolve(dirname(parent.identifier), specifier)),
+  );
+  await entry.evaluate();
   const settle = async () => {
     for (let i = 0; i < 5; i++) await new Promise(setImmediate);
   };

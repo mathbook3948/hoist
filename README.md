@@ -92,6 +92,30 @@ artifact 경로와 version은 **분리된 argv**입니다. 업로드 파일명�
 
 모든 계정은 동일한 배포 권한을 갖습니다. RBAC, MFA, 감사 로그의 변조 방지, 서명된 artifact, 바이러스 검사, 다중 서버 조정은 구현하지 않았습니다. 신뢰할 수 있는 관리자용 초기 프로토타입이며 공개 서비스용 보안 인증을 받은 제품이 아닙니다.
 
+## 코드 구조
+
+서버는 `src/server.ts`에서 요청과 서버 수명을 관리하고, 기능별 모듈을 서버 인스턴스마다 생성합니다. 인증 상태와 업로드·배포 실행 상태도 각 인스턴스 안에 보관합니다.
+
+```text
+src/
+  main.ts         CLI 명령과 설치 폴더 잠금
+  server.ts       서버 시작·종료, 정적 파일, API 연결
+  http.ts         JSON 응답, HTTP 오류, 제한된 JSON 요청 읽기
+  auth.ts         로그인, 세션, Origin/CSRF 검사
+  artifacts.ts    스트리밍 업로드와 용량 제한
+  deployments.ts  스크립트 실행, 로그, 취소, 타임아웃
+  store.ts        설정·상태 저장, 파일 정리, 보관 개수 제한
+public/
+  app.js          세션과 프로젝트 전환, 모듈 연결
+  state.js        화면 상태와 공통 조회 함수
+  api.js          API 요청과 오류 처리
+  render.js       DOM 렌더링
+  polling.js      배포 선택과 로그 폴링
+  events.js       폼·버튼·화면 상태 이벤트 연결
+```
+
+프런트엔드는 브라우저 기본 ES 모듈을 사용하므로 별도 빌드 없이 실행합니다. DOM 테스트는 Node의 VM 모듈로 실제 모듈들을 불러오며, `test:frontend` 명령에 필요한 플래그가 포함되어 있습니다.
+
 ## 코드 포맷
 
 개발 의존성을 설치한 뒤 Prettier 기본 규칙으로 포맷을 적용합니다.
@@ -110,7 +134,7 @@ bun test
 bun run check
 bun tests/measure-memory.ts
 node --check public/app.js
-node tests/frontend-dom.cjs
+bun run test:frontend
 ```
 
 통합 테스트는 /tmp에서 임의로 생성한 계정과 테스트 스크립트만 사용하고 종료 시 삭제합니다. 인증, Origin/CSRF, path rejection, shell injection, 업로드 크기/부분파일 정리, 배포 동시 실행 차단, 로그 제한, 취소, 타임아웃, 실패 상태, CLI 락, 재시작/세션 무효화를 검증합니다. Bun build는 문법/번들 컴파일 검사이며 TypeScript의 `tsc --noEmit` 타입 검사는 아닙니다. TypeScript compiler/types는 설치하지 않았습니다.

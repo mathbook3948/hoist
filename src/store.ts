@@ -229,3 +229,16 @@ export function storedArtifactBytes(dir: string) {
   }
   return size;
 }
+
+export function trimState(dir: string, config: Config, p: Project, s: State) {
+  while (s.artifacts.length > config.artifactRetention) {
+    const removed = s.artifacts.shift()!;
+    unlinkSync(join(projectDir(dir, p.id), "artifacts", removed.id + ".bin"));
+  }
+  while (s.deployments.length > config.historyRetention) {
+    const removed = s.deployments.shift()!;
+    const log = join(projectDir(dir, p.id), "logs", removed.id + ".log");
+    if (existsSync(log)) unlinkSync(log);
+  }
+  saveState(dir, p, s);
+}
