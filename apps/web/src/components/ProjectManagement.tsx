@@ -9,6 +9,7 @@ import { Button } from "./ui/button";
 import { Plus, Settings, Trash2 } from "lucide-react";
 import { Input } from "./ui/input";
 import { Textarea } from "./ui/textarea";
+import { ScrollArea, ScrollBar } from "./ui/scroll-area";
 import { Label } from "./ui/label";
 import { Alert, AlertDescription } from "./ui/alert";
 import {
@@ -204,7 +205,11 @@ export function ProjectManagement({ app }: { app: Console }) {
             </DialogDescription>
           </DialogHeader>
           {editor && (
-            <form id="project-form" className="space-y-4" onSubmit={save}>
+            <form
+              id="project-form"
+              className="min-w-0 space-y-4"
+              onSubmit={save}
+            >
               <div className="space-y-2">
                 <Label htmlFor="project-name-input">프로젝트 이름</Label>
                 <Input
@@ -220,22 +225,28 @@ export function ProjectManagement({ app }: { app: Console }) {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="project-script-input">배포 스크립트</Label>
-                <Textarea
-                  id="project-script-input"
-                  required
-                  autoComplete="off"
-                  autoCapitalize="none"
-                  spellCheck={false}
-                  wrap="off"
-                  className="h-72 min-h-48 field-sizing-fixed font-mono text-sm leading-relaxed"
-                  value={editor.input.scriptContent}
-                  disabled={
-                    app.managementBusy ||
-                    editor.loading ||
-                    Boolean(editor.loadError)
-                  }
-                  onChange={(e) => field("scriptContent", e.target.value)}
-                />
+                <ScrollArea
+                  type="auto"
+                  className="h-72 overflow-hidden rounded-md border border-input focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/50"
+                >
+                  <Textarea
+                    id="project-script-input"
+                    required
+                    autoComplete="off"
+                    autoCapitalize="none"
+                    spellCheck={false}
+                    wrap="off"
+                    className="min-h-[calc(var(--spacing)*72-2px)] w-max min-w-full resize-none overflow-hidden field-sizing-content rounded-none border-0 font-mono text-sm leading-relaxed shadow-none focus-visible:ring-0"
+                    value={editor.input.scriptContent}
+                    disabled={
+                      app.managementBusy ||
+                      editor.loading ||
+                      Boolean(editor.loadError)
+                    }
+                    onChange={(e) => field("scriptContent", e.target.value)}
+                  />
+                  <ScrollBar orientation="horizontal" />
+                </ScrollArea>
                 <p className="text-xs text-muted-foreground">
                   {editor.loading
                     ? "스크립트를 불러오는 중…"
