@@ -203,6 +203,47 @@ try {
   await server.exited;
   writeFileSync(
     join(home, ".hoist/settings.json"),
+    JSON.stringify({
+      dataDir: data,
+      allowedIP: "100.64.0.0/10",
+      trustedProxy: "127.0.0.1",
+    }),
+  );
+  server = Bun.spawn([executable, "serve", "--data-dir", data], {
+    cwd: tmp,
+    env,
+    stdout: "ignore",
+    stderr: "inherit",
+  });
+  ready = false;
+  for (let i = 0; i < 100; i++) {
+    if (server.exitCode !== null)
+      throw new Error("Proxy-enabled executable exited early");
+    try {
+      const response = await fetch(origin + "/api/me", {
+        headers: { "X-Forwarded-For": "100.80.1.2" },
+      });
+      if (response.status === 401) {
+        ready = true;
+        break;
+      }
+    } catch {}
+    await Bun.sleep(50);
+  }
+  assert.ok(ready, "Compiled server must load trustedProxy from settings");
+  assert.equal((await fetch(origin + "/api/me")).status, 403);
+  assert.equal(
+    (
+      await fetch(origin + "/api/me", {
+        headers: { "X-Forwarded-For": "100.80.1.2,192.0.2.1" },
+      })
+    ).status,
+    403,
+  );
+  server.kill();
+  await server.exited;
+  writeFileSync(
+    join(home, ".hoist/settings.json"),
     JSON.stringify({ dataDir: data, allowedIP: "invalid" }),
   );
   const invalid = Bun.spawn([executable, "serve", "--data-dir", data], {

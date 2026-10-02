@@ -87,7 +87,32 @@ Tailscale 대역은 [공식 예약 주소 문서](https://tailscale.com/docs/ref
 
 서버는 시작할 때 설정을 읽으며 변경 후 재시작해야 합니다. 개발 서버나 `--data-dir`/`HOIST_DATA_DIR`로 데이터 위치를 지정한 서버도 실행 사용자 홈의 `allowedIP`를 읽습니다. 개발 모드가 홈 설정을 건너뛰는 것은 데이터 경로 선택뿐입니다. 파일 감시나 주기적인 재로딩은 하지 않습니다.
 
-허용되지 않은 실제 연결 IP는 화면·정적 파일·로그인·모든 API에서 본문 처리 전에 HTTP 403으로 거절합니다. IPv4-mapped IPv6도 IPv4 규칙에 맞춰 판정하며, `X-Forwarded-For`, `X-Real-IP`, `Forwarded`는 신뢰하지 않습니다. 프록시를 쓰면 검사 대상은 프록시 IP입니다. 같은 서버의 프록시를 사용하는 경우 Hoist에는 `127.0.0.1`을 허용하고 원래 클라이언트의 IP 제한은 프록시에서 적용하세요.
+허용되지 않은 사용자 IP는 화면·정적 파일·로그인·모든 API에서 본문 처리 전에 HTTP 403으로 거절합니다. IPv4-mapped IPv6도 IPv4 규칙에 맞춰 판정합니다. 기본적으로 실제 연결 IP를 사용하고 전달 헤더는 무시합니다.
+
+역방향 프록시 뒤에서는 `trustedProxy`에 신뢰할 프록시 IP 또는 CIDR **하나**를 지정합니다. 기본값은 미설정입니다. 기존 `dataDir`을 유지하며 다음 설정을 추가하고 재시작하세요:
+
+```json
+{
+  "allowedIP": "100.64.0.0/10",
+  "trustedProxy": "127.0.0.1"
+}
+```
+
+연결 상대가 `trustedProxy`에 해당할 때만 `X-Forwarded-For`를 읽습니다. 목록을 오른쪽부터 확인하여 신뢰할 프록시들을 제외한 첫 IP를 사용자 IP로 선택합니다. 신뢰하지 않는 상대의 전달 헤더는 무시합니다. 신뢰한 프록시의 헤더가 없거나 잘못되었거나, 모든 주소가 신뢰할 프록시인 경우 HTTP 403으로 거절합니다. 헤더는 최대 4096자·32개 IP까지이며 포트·호스트명·IPv6 zone ID는 받지 않습니다. `X-Real-IP`와 `Forwarded`는 사용하지 않습니다. 판정한 IP는 정규화하여 접근 제한과 로그인 시도 제한에 함께 사용합니다.
+
+사용자 연결을 직접 받는 같은 호스트의 Nginx라면 HTTPS 서버 블록에서 다음처럼 전달 헤더를 덮어씁니다. Hoist의 `host`는 `127.0.0.1`로 두고 `publicOrigin`은 실제 외부 HTTPS 주소로 설정합니다:
+
+```nginx
+location / {
+    client_max_body_size 1g;
+    proxy_request_buffering off;
+    proxy_pass http://127.0.0.1:3000;
+    proxy_set_header Host $http_host;
+    proxy_set_header X-Forwarded-For $remote_addr;
+}
+```
+
+프록시가 여러 개인 경우 각 프록시는 실제 연결 상대를 전달 목록에 추가해야 하며, Hoist와 사용자 사이의 신뢰할 프록시들이 지정한 `trustedProxy` 대역에 있어야 합니다. 신뢰 대역에 일반 클라이언트나 불특정 호스트를 포함하지 마세요. 프록시 신뢰는 사용자 접근 허용이 아니며 최종 사용자 IP는 항상 `allowedIP`를 통과해야 합니다.
 
 `allowedIP`는 접근 제어만 바꾸며 SQLite의 `host`·`port`·`publicOrigin`을 변경하지 않습니다. 기본 `host=127.0.0.1`은 원격 연결을 받지 않습니다. 현재 외부 바인딩에는 HTTPS `publicOrigin`과 보호된 역방향 프록시가 필요하므로, 이 값만 Tailscale 대역으로 바꿔도 Tailscale 주소로 직접 HTTP 접속이 열리는 것은 아닙니다.
 
@@ -146,7 +171,7 @@ artifact 경로와 version은 **분리된 argv**입니다. 업로드 파일명�
 - 로그인 파서/해시 검증 직렬화, 제한된 JSON body(8 KiB/절대 10초), 파일 streaming 저장(기본 최대 1시간)
 - MIME sniffing/iframe 차단, CSP, no-store; 사용자 출력은 텍스트로 표시
 
-기본 loopback HTTP는 SSH 터널이나 같은 서버의 역방향 프록시 뒤에서 사용합니다. 외부에 직접 노출하지 마세요. 외부 접근이 꼭 필요하면 TLS reverse proxy, 접근 제어/VPN, 요청 크기·연결·시간 제한을 먼저 준비하고 `publicOrigin`을 정확한 HTTPS origin으로 설정하세요. 프록시는 해당 Origin/Host를 보존해야 합니다. HTTPS 설정 시 쿠키에 Secure가 붙습니다. 프록시의 전달 IP 헤더는 신뢰하지 않으므로 로그인 속도 제한은 프록시 IP에 함께 적용됩니다. 네트워크를 직접 바꾸거나 TLS를 구성하는 기능은 없습니다.
+기본 loopback HTTP는 SSH 터널이나 같은 서버의 역방향 프록시 뒤에서 사용합니다. 외부에 직접 노출하지 마세요. 외부 접근이 꼭 필요하면 TLS reverse proxy, 접근 제어/VPN, 요청 크기·연결·시간 제한을 먼저 준비하고 `publicOrigin`을 정확한 HTTPS origin으로 설정하세요. 프록시는 해당 Origin/Host를 보존해야 합니다. HTTPS 설정 시 쿠키에 Secure가 붙습니다. `trustedProxy`를 설정하면 검증한 사용자 IP로 로그인 속도를 제한합니다. 미설정이면 연결 상대인 프록시 IP에 함께 적용됩니다. 네트워크를 직접 바꾸거나 TLS를 구성하는 기능은 없습니다.
 
 단일 관리자 계정으로 운영합니다. RBAC, MFA, 감사 로그의 변조 방지, 서명된 artifact, 바이러스 검사, 다중 서버 조정은 구현하지 않았습니다. 신뢰할 수 있는 관리자용 초기 프로토타입이며 공개 서비스용 보안 인증을 받은 제품이 아닙니다.
 

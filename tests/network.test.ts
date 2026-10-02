@@ -2,7 +2,10 @@ import { expect, test } from "bun:test";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createIPFilter } from "../apps/server/src/network";
+import {
+  createIPFilter,
+  createClientIPResolver,
+} from "../apps/server/src/network";
 import { readSettings } from "../apps/server/src/settings";
 import { resolveDataDir } from "../apps/server/src/paths";
 import { Store } from "../apps/server/src/store";
@@ -93,8 +96,116 @@ test("settings accept a single allowedIP alongside dataDir and reject invalid po
     }
     writeFileSync(path, '{"allowedIPs":["127.0.0.1"]}');
     expect(() => readSettings(home)).toThrow();
+    writeFileSync(path, JSON.stringify({ trustedProxy: "127.0.0.0/8" }));
+    expect(readSettings(home).trustedProxy).toBe("127.0.0.0/8");
+    for (const trustedProxy of [null, [], "", "localhost", "127.0.0.1/33"]) {
+      writeFileSync(path, JSON.stringify({ trustedProxy }));
+      expect(() => readSettings(home)).toThrow("trustedProxy");
+    }
   } finally {
     rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("proxy chains stop at the closest untrusted hop and normalize client identities", () => {
+  const resolve = createClientIPResolver("127.0.0.0/8");
+  expect(createClientIPResolver()("127.0.0.1", "100.80.1.2")).toBe("127.0.0.1");
+  expect(resolve("192.0.2.1", "100.80.1.2")).toBe("192.0.2.1");
+  expect(resolve("192.0.2.1", "invalid")).toBe("192.0.2.1");
+  expect(resolve(undefined, "100.80.1.2")).toBeUndefined();
+  expect(resolve("::ffff:127.0.0.1", "100.80.1.2, 127.0.0.2")).toBe(
+    "100.80.1.2",
+  );
+  expect(resolve("127.0.0.1", "100.80.1.2, 192.0.2.1, 127.0.0.2")).toBe(
+    "192.0.2.1",
+  );
+  expect(resolve("127.0.0.1", "::ffff:6450:102")).toBe("100.80.1.2");
+  expect(resolve("127.0.0.1", "FD7A:115C:A1E0:0:0:0:0:1")).toBe(
+    "fd7a:115c:a1e0::1",
+  );
+  const v6 = createClientIPResolver("fd00::/64");
+  expect(v6("fd00::1", "100.80.1.2, fd00::2")).toBe("100.80.1.2");
+  for (const header of [
+    null,
+    "",
+    "unknown",
+    "127.0.0.1",
+    "127.0.0.1,127.0.0.2",
+    "100.80.1.2,",
+    "bad,100.80.1.2",
+    "100.80.1.2:123",
+    "[::1]",
+    "fe80::1%eth0",
+    "a".repeat(4097),
+    Array(33).fill("100.80.1.2").join(","),
+  ])
+    expect(resolve("127.0.0.1", header)).toBeUndefined();
+});
+
+test("trusted proxy HTTP enforces client access and separates login throttles by normalized client IP", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "hoist-proxy-http-"));
+  let runtime: ReturnType<typeof startServer> | undefined;
+  try {
+    const store = new Store(dir);
+    const reserve = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch: () => new Response(),
+    });
+    const port = reserve.port;
+    await reserve.stop(true);
+    store.setConfig({ ...store.getConfig(), port });
+    runtime = startServer(store, {
+      allowedIP: "100.64.0.0/10",
+      trustedProxy: "127.0.0.1",
+    });
+    const origin = `http://127.0.0.1:${port}`;
+    for (const path of [
+      "/",
+      "/api/me",
+      "/api/login",
+      "/api/projects",
+      "/assets/missing.js",
+    ]) {
+      for (const forwarded of [
+        undefined,
+        "invalid",
+        "192.0.2.1",
+        "100.80.1.2,192.0.2.1",
+      ]) {
+        const response = await fetch(origin + path, {
+          method: path === "/api/login" ? "POST" : "GET",
+          headers: {
+            ...(forwarded ? { "X-Forwarded-For": forwarded } : {}),
+            "X-Real-IP": "100.80.1.2",
+            Forwarded: "for=100.80.1.2",
+          },
+        });
+        expect(response.status).toBe(403);
+        expect(await response.json()).toEqual({ error: "IP address rejected" });
+      }
+    }
+    const me = await fetch(origin + "/api/me", {
+      headers: { "X-Forwarded-For": "100.80.1.2" },
+    });
+    expect(me.status).toBe(401);
+    const login = (ip: string) =>
+      fetch(origin + "/api/login", {
+        method: "POST",
+        headers: {
+          Origin: origin,
+          "Content-Type": "application/json",
+          "X-Forwarded-For": ip,
+        },
+        body: "{}",
+      });
+    for (let i = 0; i < 10; i++)
+      expect((await login("100.80.1.2")).status).toBe(400);
+    expect((await login("::ffff:6450:102")).status).toBe(429);
+    expect((await login("100.80.1.3")).status).toBe(400);
+  } finally {
+    await runtime?.stop();
+    rmSync(dir, { recursive: true, force: true });
   }
 });
 

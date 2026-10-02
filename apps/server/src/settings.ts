@@ -3,7 +3,11 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { createIPFilter } from "./network";
 
-export type Settings = { dataDir?: string; allowedIP?: string };
+export type Settings = {
+  dataDir?: string;
+  allowedIP?: string;
+  trustedProxy?: string;
+};
 
 export function readSettings(home = homedir()): Settings {
   const file = join(home, ".hoist", "settings.json");
@@ -24,10 +28,12 @@ export function readSettings(home = homedir()): Settings {
     !value ||
     typeof value !== "object" ||
     Array.isArray(value) ||
-    Object.keys(value).some((key) => !["dataDir", "allowedIP"].includes(key))
+    Object.keys(value).some(
+      (key) => !["dataDir", "allowedIP", "trustedProxy"].includes(key),
+    )
   )
     throw new Error(
-      `${file} must be an object containing only optional dataDir and allowedIP`,
+      `${file} must be an object containing only optional dataDir, allowedIP and trustedProxy`,
     );
   if (
     "dataDir" in value &&
@@ -38,6 +44,8 @@ export function readSettings(home = homedir()): Settings {
     throw new Error(`${file}: dataDir must be a non-empty path string`);
   try {
     createIPFilter(value.allowedIP);
+    if ("trustedProxy" in value)
+      createIPFilter(value.trustedProxy, "trustedProxy");
   } catch (error) {
     throw new Error(`${file}: ${(error as Error).message}`);
   }

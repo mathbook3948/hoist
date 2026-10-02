@@ -6,10 +6,11 @@ import { createArtifacts } from "./artifacts";
 import { createDeployments } from "./deployments";
 import { createProjects } from "./projects";
 import { readSettings, type Settings } from "./settings";
-import { createIPFilter } from "./network";
+import { createIPFilter, createClientIPResolver } from "./network";
 
 export function startServer(store: Store, settings: Settings = readSettings()) {
   const isAllowedIP = createIPFilter(settings.allowedIP);
+  const resolveClientIP = createClientIPResolver(settings.trustedProxy);
   const dir = store.dir;
   const config = store.getConfig();
   store.recover();
@@ -35,7 +36,10 @@ export function startServer(store: Store, settings: Settings = readSettings()) {
     maxRequestBodySize: config.maxArtifactBytes,
     async fetch(req, server) {
       try {
-        const clientIP = server.requestIP(req)?.address;
+        const clientIP = resolveClientIP(
+          server.requestIP(req)?.address,
+          req.headers.get("x-forwarded-for"),
+        );
         if (!isAllowedIP(clientIP)) fail(403, "IP address rejected");
         if (shuttingDown) fail(503, "Shutting down");
         const url = new URL(req.url);

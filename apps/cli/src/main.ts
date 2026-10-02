@@ -24,6 +24,7 @@ Passwords are prompted with masked input and confirmation. Use --password-stdin 
 --data-dir is optional: flag > HOIST_DATA_DIR > ~/.hoist/settings.json (dataDir) > ~/.hoist/data.
 The development CLI defaults to the repository .data instead of home settings.
 All servers read allowedIP from ~/.hoist/settings.json (default: 127.0.0.1). Accepts one IP or CIDR; restart to apply.
+Optional trustedProxy accepts one proxy IP or CIDR and enables validated X-Forwarded-For client IPs.
 `;
 export async function main(argv: string[], developmentDataDir?: string) {
   if (!argv.length || argv.includes("--help")) {
